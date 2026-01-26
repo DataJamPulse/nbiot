@@ -3,266 +3,934 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NB-IoT JamBox Admin</title>
+    <title>NB-IoT Fleet Command | DataJam</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg-primary: #0f0f0f;
-            --bg-secondary: #1a1a1a;
-            --bg-card: #242424;
-            --text-primary: #ffffff;
-            --text-secondary: #a0a0a0;
-            --text-muted: #666666;
-            --accent: #E62F6E;
-            --accent-secondary: #E94B52;
-            --success: #10B981;
-            --warning: #F59E0B;
-            --danger: #EF4444;
-            --border: #333333;
+            --bg-void: #050508;
+            --bg-deep: #0a0a0f;
+            --bg-surface: #12121a;
+            --bg-elevated: #1a1a24;
+            --bg-hover: #22222e;
+
+            --text-bright: #ffffff;
+            --text-primary: #e4e4eb;
+            --text-secondary: #8888a0;
+            --text-muted: #555566;
+
+            --accent-pink: #E62F6E;
+            --accent-coral: #E94B52;
+            --accent-glow: rgba(230, 47, 110, 0.4);
+
+            --status-online: #00E5A0;
+            --status-online-glow: rgba(0, 229, 160, 0.3);
+            --status-warning: #FFB800;
+            --status-warning-glow: rgba(255, 184, 0, 0.3);
+            --status-offline: #FF4757;
+            --status-offline-glow: rgba(255, 71, 87, 0.3);
+
+            --border-subtle: rgba(255, 255, 255, 0.06);
+            --border-accent: rgba(230, 47, 110, 0.3);
+
+            --radius-sm: 6px;
+            --radius-md: 12px;
+            --radius-lg: 20px;
+
+            --font-display: 'Outfit', sans-serif;
+            --font-mono: 'JetBrains Mono', monospace;
         }
 
         * { box-sizing: border-box; margin: 0; padding: 0; }
 
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: var(--bg-primary);
-            color: var(--text-primary);
-            min-height: 100vh;
-            padding: 24px;
+        html {
+            font-size: 16px;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
         }
 
-        .container { max-width: 1200px; margin: 0 auto; }
+        body {
+            font-family: var(--font-display);
+            background: var(--bg-void);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
 
-        header {
+        /* Atmospheric background */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background:
+                radial-gradient(ellipse 80% 50% at 50% -20%, rgba(230, 47, 110, 0.15), transparent),
+                radial-gradient(ellipse 60% 40% at 100% 0%, rgba(233, 75, 82, 0.1), transparent),
+                radial-gradient(ellipse 50% 30% at 0% 100%, rgba(230, 47, 110, 0.08), transparent);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        /* Scan line effect */
+        body::after {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: repeating-linear-gradient(
+                0deg,
+                transparent,
+                transparent 2px,
+                rgba(0, 0, 0, 0.03) 2px,
+                rgba(0, 0, 0, 0.03) 4px
+            );
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        .app {
+            position: relative;
+            z-index: 2;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Header */
+        .header {
+            padding: 24px 32px;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 32px;
-            padding-bottom: 16px;
-            border-bottom: 1px solid var(--border);
+            border-bottom: 1px solid var(--border-subtle);
+            background: linear-gradient(180deg, rgba(10, 10, 15, 0.9) 0%, transparent 100%);
+            backdrop-filter: blur(20px);
+            position: sticky;
+            top: 0;
+            z-index: 100;
         }
 
-        h1 {
-            font-size: 24px;
-            background: linear-gradient(135deg, var(--accent), var(--accent-secondary));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 16px;
         }
 
+        .brand-icon {
+            width: 48px;
+            height: 48px;
+            background: linear-gradient(135deg, var(--accent-pink), var(--accent-coral));
+            border-radius: var(--radius-md);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            box-shadow: 0 0 30px var(--accent-glow);
+            animation: pulse-glow 3s ease-in-out infinite;
+        }
+
+        @keyframes pulse-glow {
+            0%, 100% { box-shadow: 0 0 20px var(--accent-glow); }
+            50% { box-shadow: 0 0 40px var(--accent-glow), 0 0 60px rgba(230, 47, 110, 0.2); }
+        }
+
+        .brand-text h1 {
+            font-size: 20px;
+            font-weight: 600;
+            letter-spacing: -0.02em;
+            color: var(--text-bright);
+        }
+
+        .brand-text span {
+            font-size: 12px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 12px;
+        }
+
+        /* Buttons */
         .btn {
-            padding: 10px 20px;
-            border-radius: 8px;
-            border: none;
-            cursor: pointer;
+            font-family: var(--font-display);
             font-size: 14px;
             font-weight: 500;
-            transition: opacity 0.2s;
-        }
-        .btn:hover { opacity: 0.9; }
-        .btn-primary {
-            background: linear-gradient(135deg, var(--accent), var(--accent-secondary));
-            color: white;
-        }
-        .btn-secondary {
-            background: var(--bg-card);
-            color: var(--text-primary);
-            border: 1px solid var(--border);
+            padding: 12px 24px;
+            border-radius: var(--radius-md);
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
         }
 
-        .stats-bar {
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent-pink), var(--accent-coral));
+            color: white;
+            box-shadow: 0 4px 20px var(--accent-glow);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 30px var(--accent-glow);
+        }
+
+        .btn-ghost {
+            background: var(--bg-surface);
+            color: var(--text-secondary);
+            border: 1px solid var(--border-subtle);
+        }
+
+        .btn-ghost:hover {
+            background: var(--bg-elevated);
+            color: var(--text-primary);
+            border-color: var(--border-accent);
+        }
+
+        .btn-icon {
+            width: 44px;
+            height: 44px;
+            padding: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+        }
+
+        /* Main content */
+        .main {
+            flex: 1;
+            padding: 32px;
+            max-width: 1440px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        /* Stats Row */
+        .stats-row {
             display: flex;
             gap: 16px;
-            margin-bottom: 24px;
+            margin-bottom: 32px;
             flex-wrap: wrap;
         }
 
-        .stat-badge {
-            padding: 8px 16px;
-            border-radius: 20px;
-            font-size: 13px;
-            font-weight: 600;
+        .stat-card {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-lg);
+            padding: 24px;
+            min-width: 180px;
+            flex: 1;
+            position: relative;
+            overflow: hidden;
         }
-        .stat-badge.online { background: rgba(16, 185, 129, 0.15); color: var(--success); }
-        .stat-badge.warning { background: rgba(245, 158, 11, 0.15); color: var(--warning); }
-        .stat-badge.offline { background: rgba(239, 68, 68, 0.15); color: var(--danger); }
-        .stat-badge.total { background: var(--bg-card); color: var(--text-secondary); }
 
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, var(--accent-pink), var(--accent-coral));
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .stat-card:hover::before {
+            opacity: 1;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+        }
+
+        .stat-value {
+            font-size: 36px;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            color: var(--text-bright);
+        }
+
+        .stat-card.online .stat-value { color: var(--status-online); }
+        .stat-card.warning .stat-value { color: var(--status-warning); }
+        .stat-card.offline .stat-value { color: var(--status-offline); }
+
+        .stat-card.online { box-shadow: inset 0 0 60px -30px var(--status-online-glow); }
+        .stat-card.warning { box-shadow: inset 0 0 60px -30px var(--status-warning-glow); }
+        .stat-card.offline { box-shadow: inset 0 0 60px -30px var(--status-offline-glow); }
+
+        /* Section header */
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .section-title {
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            color: var(--text-muted);
+        }
+
+        /* Device Grid */
         .devices-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-            gap: 16px;
-            margin-bottom: 32px;
+            grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+            gap: 20px;
         }
 
         .device-card {
-            background: var(--bg-card);
-            border-radius: 12px;
-            padding: 20px;
-            border: 1px solid var(--border);
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-lg);
+            padding: 24px;
             cursor: pointer;
-            transition: border-color 0.2s;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
         }
-        .device-card:hover { border-color: var(--accent); }
+
+        .device-card::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: var(--radius-lg);
+            padding: 1px;
+            background: linear-gradient(135deg, transparent 40%, var(--accent-pink) 100%);
+            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            -webkit-mask-composite: xor;
+            mask-composite: exclude;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .device-card:hover {
+            transform: translateY(-4px);
+            background: var(--bg-elevated);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+        }
+
+        .device-card:hover::after {
+            opacity: 1;
+        }
 
         .device-header {
             display: flex;
             justify-content: space-between;
             align-items: flex-start;
-            margin-bottom: 16px;
+            margin-bottom: 20px;
         }
 
         .device-id {
+            font-family: var(--font-mono);
             font-size: 18px;
-            font-weight: 600;
+            font-weight: 500;
+            color: var(--text-bright);
+            letter-spacing: 0.02em;
         }
 
         .device-project {
             font-size: 13px;
-            color: var(--text-muted);
+            color: var(--text-secondary);
             margin-top: 4px;
         }
 
-        .status-badge {
-            padding: 4px 12px;
-            border-radius: 12px;
+        /* Status indicator */
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 14px;
+            border-radius: 100px;
             font-size: 12px;
             font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
         }
-        .status-badge.online { background: rgba(16, 185, 129, 0.15); color: var(--success); }
-        .status-badge.warning { background: rgba(245, 158, 11, 0.15); color: var(--warning); }
-        .status-badge.offline { background: rgba(239, 68, 68, 0.15); color: var(--danger); }
-        .status-badge.unknown { background: var(--bg-secondary); color: var(--text-muted); }
 
-        .device-info {
+        .status-indicator::before {
+            content: '';
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            animation: status-pulse 2s ease-in-out infinite;
+        }
+
+        .status-indicator.online {
+            background: rgba(0, 229, 160, 0.1);
+            color: var(--status-online);
+        }
+        .status-indicator.online::before {
+            background: var(--status-online);
+            box-shadow: 0 0 10px var(--status-online);
+        }
+
+        .status-indicator.warning {
+            background: rgba(255, 184, 0, 0.1);
+            color: var(--status-warning);
+        }
+        .status-indicator.warning::before {
+            background: var(--status-warning);
+            box-shadow: 0 0 10px var(--status-warning);
+            animation: status-pulse-warning 1s ease-in-out infinite;
+        }
+
+        .status-indicator.offline {
+            background: rgba(255, 71, 87, 0.1);
+            color: var(--status-offline);
+        }
+        .status-indicator.offline::before {
+            background: var(--status-offline);
+            box-shadow: 0 0 10px var(--status-offline);
+            animation: none;
+        }
+
+        .status-indicator.unknown {
+            background: var(--bg-elevated);
+            color: var(--text-muted);
+        }
+        .status-indicator.unknown::before {
+            background: var(--text-muted);
+        }
+
+        @keyframes status-pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.6; transform: scale(1.2); }
+        }
+
+        @keyframes status-pulse-warning {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        /* Device metrics */
+        .device-metrics {
             display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 8px;
-            font-size: 13px;
-            color: var(--text-secondary);
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
         }
 
-        .loading {
+        .metric {
+            background: var(--bg-deep);
+            border-radius: var(--radius-sm);
+            padding: 12px;
+        }
+
+        .metric-label {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+        }
+
+        .metric-value {
+            font-family: var(--font-mono);
+            font-size: 14px;
+            color: var(--text-primary);
+        }
+
+        /* Loading & Error states */
+        .loading-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 80px 40px;
+            color: var(--text-muted);
+            grid-column: 1 / -1;
+        }
+
+        .loading-spinner {
+            width: 48px;
+            height: 48px;
+            border: 3px solid var(--bg-elevated);
+            border-top-color: var(--accent-pink);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 16px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .error-state {
+            background: rgba(255, 71, 87, 0.1);
+            border: 1px solid rgba(255, 71, 87, 0.2);
+            border-radius: var(--radius-lg);
+            padding: 40px;
             text-align: center;
-            padding: 60px;
+            color: var(--status-offline);
+            grid-column: 1 / -1;
+        }
+
+        .empty-state {
+            grid-column: 1 / -1;
+            text-align: center;
+            padding: 80px 40px;
             color: var(--text-muted);
         }
 
-        .error {
-            text-align: center;
-            padding: 40px;
-            color: var(--danger);
-            background: rgba(239, 68, 68, 0.1);
-            border-radius: 12px;
+        .empty-state-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+            opacity: 0.5;
         }
 
         /* Modal */
         .modal-overlay {
             position: fixed;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0,0,0,0.8);
+            inset: 0;
+            background: rgba(5, 5, 8, 0.9);
+            backdrop-filter: blur(8px);
             display: flex;
             align-items: center;
             justify-content: center;
             z-index: 1000;
-            padding: 20px;
-        }
-        .modal {
-            background: var(--bg-secondary);
-            border-radius: 16px;
             padding: 24px;
-            max-width: 500px;
+            animation: fade-in 0.2s ease;
+        }
+
+        @keyframes fade-in {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .modal {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-lg);
             width: 100%;
+            max-width: 520px;
             max-height: 90vh;
             overflow-y: auto;
-            border: 1px solid var(--border);
+            animation: modal-in 0.3s ease;
+            position: relative;
         }
-        .modal h2 {
-            margin-bottom: 20px;
-            font-size: 20px;
+
+        @keyframes modal-in {
+            from { opacity: 0; transform: scale(0.95) translateY(10px); }
+            to { opacity: 1; transform: scale(1) translateY(0); }
         }
+
+        .modal-header {
+            padding: 24px 24px 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+
         .modal-close {
-            float: right;
-            background: none;
+            width: 36px;
+            height: 36px;
+            border-radius: var(--radius-sm);
+            background: var(--bg-elevated);
             border: none;
             color: var(--text-muted);
-            font-size: 24px;
+            font-size: 20px;
             cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
         }
 
-        .form-group {
-            margin-bottom: 16px;
+        .modal-close:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
         }
-        .form-group label {
+
+        .modal-body {
+            padding: 24px;
+        }
+
+        .modal-title {
+            font-family: var(--font-mono);
+            font-size: 24px;
+            font-weight: 600;
+            color: var(--text-bright);
+            margin-bottom: 4px;
+        }
+
+        .modal-subtitle {
+            font-size: 14px;
+            color: var(--text-secondary);
+        }
+
+        /* Form styles */
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-label {
             display: block;
             font-size: 12px;
-            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 14px 16px;
+            font-family: var(--font-display);
+            font-size: 15px;
+            background: var(--bg-deep);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-md);
+            color: var(--text-primary);
+            transition: all 0.2s ease;
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: var(--accent-pink);
+            box-shadow: 0 0 0 3px var(--accent-glow);
+        }
+
+        .form-input::placeholder {
+            color: var(--text-muted);
+        }
+
+        .form-hint {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 6px;
+        }
+
+        .form-input.mono {
+            font-family: var(--font-mono);
+            font-size: 16px;
+            letter-spacing: 0.05em;
+        }
+
+        /* Token display */
+        .token-container {
+            background: var(--bg-deep);
+            border: 1px solid var(--status-online);
+            border-radius: var(--radius-md);
+            padding: 20px;
+            margin: 20px 0;
+        }
+
+        .token-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--status-online);
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .token-value {
+            font-family: var(--font-mono);
+            font-size: 13px;
+            color: var(--text-primary);
+            word-break: break-all;
+            line-height: 1.6;
+            background: var(--bg-surface);
+            padding: 12px;
+            border-radius: var(--radius-sm);
+        }
+
+        .token-warning {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            padding: 14px;
+            background: rgba(255, 184, 0, 0.1);
+            border: 1px solid rgba(255, 184, 0, 0.2);
+            border-radius: var(--radius-md);
+            margin-top: 16px;
+            font-size: 13px;
+            color: var(--status-warning);
+        }
+
+        /* Detail view stats grid */
+        .detail-stats {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            margin: 24px 0;
+        }
+
+        .detail-stat {
+            background: var(--bg-deep);
+            border-radius: var(--radius-md);
+            padding: 16px;
+        }
+
+        .detail-stat-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-muted);
             margin-bottom: 6px;
         }
-        .form-group input, .form-group select {
-            width: 100%;
-            padding: 10px;
-            border-radius: 8px;
-            border: 1px solid var(--border);
-            background: var(--bg-card);
-            color: var(--text-primary);
-            font-size: 14px;
+
+        .detail-stat-value {
+            font-family: var(--font-mono);
+            font-size: 16px;
+            color: var(--text-bright);
         }
 
-        .token-display {
-            background: var(--bg-card);
-            padding: 16px;
-            border-radius: 8px;
-            margin: 16px 0;
-            word-break: break-all;
-            font-family: monospace;
+        /* Readings table */
+        .readings-section {
+            margin-top: 24px;
+        }
+
+        .readings-title {
             font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--text-muted);
+            margin-bottom: 12px;
         }
 
-        .info-card {
-            background: var(--bg-card);
-            border-radius: 12px;
-            padding: 20px;
-            margin-top: 32px;
+        .readings-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
         }
-        .info-card h3 {
-            font-size: 14px;
-            margin-bottom: 12px;
+
+        .readings-table th {
+            text-align: left;
+            padding: 10px 12px;
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-muted);
+            font-weight: 500;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+
+        .readings-table th:not(:first-child) {
+            text-align: right;
+        }
+
+        .readings-table td {
+            padding: 12px;
+            border-bottom: 1px solid var(--border-subtle);
+            font-family: var(--font-mono);
             color: var(--text-secondary);
         }
-        .info-card ul {
-            margin-left: 20px;
+
+        .readings-table td:not(:first-child) {
+            text-align: right;
+            color: var(--text-primary);
+        }
+
+        .readings-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .readings-table-wrapper {
+            max-height: 240px;
+            overflow-y: auto;
+            background: var(--bg-deep);
+            border-radius: var(--radius-md);
+        }
+
+        .readings-empty {
+            padding: 32px;
+            text-align: center;
             color: var(--text-muted);
             font-size: 13px;
         }
-        .info-card li { margin-bottom: 4px; }
+
+        /* Modal actions */
+        .modal-actions {
+            display: flex;
+            gap: 12px;
+            margin-top: 24px;
+            padding-top: 24px;
+            border-top: 1px solid var(--border-subtle);
+        }
+
+        .btn-danger {
+            background: rgba(255, 71, 87, 0.1);
+            color: var(--status-offline);
+            border: 1px solid rgba(255, 71, 87, 0.2);
+        }
+
+        .btn-danger:hover {
+            background: rgba(255, 71, 87, 0.2);
+        }
+
+        /* Info footer */
+        .info-footer {
+            margin-top: 48px;
+            padding: 24px;
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-lg);
+        }
+
+        .info-footer h3 {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--text-muted);
+            margin-bottom: 16px;
+        }
+
+        .status-legend {
+            display: flex;
+            gap: 32px;
+            flex-wrap: wrap;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        .legend-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+        }
+
+        .legend-dot.online { background: var(--status-online); box-shadow: 0 0 8px var(--status-online); }
+        .legend-dot.warning { background: var(--status-warning); box-shadow: 0 0 8px var(--status-warning); }
+        .legend-dot.offline { background: var(--status-offline); box-shadow: 0 0 8px var(--status-offline); }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .header {
+                padding: 16px 20px;
+                flex-direction: column;
+                gap: 16px;
+                align-items: stretch;
+            }
+
+            .header-actions {
+                justify-content: stretch;
+            }
+
+            .header-actions .btn {
+                flex: 1;
+                justify-content: center;
+            }
+
+            .main {
+                padding: 20px;
+            }
+
+            .stats-row {
+                flex-direction: column;
+            }
+
+            .devices-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .detail-stats {
+                grid-template-columns: 1fr;
+            }
+
+            .status-legend {
+                flex-direction: column;
+                gap: 12px;
+            }
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--bg-deep);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--bg-elevated);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--bg-hover);
+        }
     </style>
 </head>
 <body>
-    <div class="container">
-        <header>
-            <div>
-                <h1>NB-IoT JamBox Admin</h1>
-                <p style="color: var(--text-muted); font-size: 13px; margin-top: 4px;">Fleet monitoring and device management</p>
+    <div class="app">
+        <header class="header">
+            <div class="brand">
+                <div class="brand-icon">📡</div>
+                <div class="brand-text">
+                    <h1>NB-IoT Fleet Command</h1>
+                    <span>DataJam Device Management</span>
+                </div>
             </div>
-            <div style="display: flex; gap: 12px;">
-                <button class="btn btn-primary" onclick="showRegisterModal()">+ Register Device</button>
-                <button class="btn btn-secondary" onclick="loadDevices()">Refresh</button>
+            <div class="header-actions">
+                <button class="btn btn-primary" onclick="showRegisterModal()">
+                    <span>+</span> Register Device
+                </button>
+                <button class="btn btn-ghost btn-icon" onclick="loadDevices()" title="Refresh">
+                    ↻
+                </button>
             </div>
         </header>
 
-        <div id="stats" class="stats-bar"></div>
+        <main class="main">
+            <div id="stats" class="stats-row"></div>
 
-        <div id="devices" class="devices-grid">
-            <div class="loading">Loading devices...</div>
-        </div>
+            <div class="section-header">
+                <span class="section-title">Fleet Devices</span>
+            </div>
 
-        <div class="info-card">
-            <h3>Status Indicators</h3>
-            <ul>
-                <li><span style="color: var(--success);">Online</span> - Heartbeat within 24 hours</li>
-                <li><span style="color: var(--warning);">Warning</span> - Heartbeat 24-48 hours ago</li>
-                <li><span style="color: var(--danger);">Offline</span> - No heartbeat for 48+ hours</li>
-            </ul>
-        </div>
+            <div id="devices" class="devices-grid">
+                <div class="loading-state">
+                    <div class="loading-spinner"></div>
+                    <span>Connecting to fleet...</span>
+                </div>
+            </div>
+
+            <div class="info-footer">
+                <h3>Status Reference</h3>
+                <div class="status-legend">
+                    <div class="legend-item">
+                        <span class="legend-dot online"></span>
+                        <span><strong>Online</strong> — Heartbeat within 24 hours</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-dot warning"></span>
+                        <span><strong>Warning</strong> — 24-48 hours since last contact</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-dot offline"></span>
+                        <span><strong>Offline</strong> — No contact for 48+ hours</span>
+                    </div>
+                </div>
+            </div>
+        </main>
     </div>
 
     <div id="modal"></div>
@@ -274,7 +942,12 @@
             const devicesEl = document.getElementById('devices');
             const statsEl = document.getElementById('stats');
 
-            devicesEl.innerHTML = '<div class="loading">Loading devices...</div>';
+            devicesEl.innerHTML = `
+                <div class="loading-state">
+                    <div class="loading-spinner"></div>
+                    <span>Connecting to fleet...</span>
+                </div>
+            `;
 
             try {
                 const res = await fetch(`${API_BASE}/devices`);
@@ -285,17 +958,31 @@
 
                 // Render stats
                 statsEl.innerHTML = `
-                    <span class="stat-badge total">${stats.total} Total</span>
-                    <span class="stat-badge online">${stats.online} Online</span>
-                    ${stats.warning > 0 ? `<span class="stat-badge warning">${stats.warning} Warning</span>` : ''}
-                    ${stats.offline > 0 ? `<span class="stat-badge offline">${stats.offline} Offline</span>` : ''}
+                    <div class="stat-card">
+                        <div class="stat-label">Total Devices</div>
+                        <div class="stat-value">${stats.total}</div>
+                    </div>
+                    <div class="stat-card online">
+                        <div class="stat-label">Online</div>
+                        <div class="stat-value">${stats.online}</div>
+                    </div>
+                    <div class="stat-card warning" style="${stats.warning === 0 ? 'opacity: 0.5' : ''}">
+                        <div class="stat-label">Warning</div>
+                        <div class="stat-value">${stats.warning}</div>
+                    </div>
+                    <div class="stat-card offline" style="${stats.offline === 0 ? 'opacity: 0.5' : ''}">
+                        <div class="stat-label">Offline</div>
+                        <div class="stat-value">${stats.offline}</div>
+                    </div>
                 `;
 
                 // Render devices
                 if (devices.length === 0) {
                     devicesEl.innerHTML = `
-                        <div style="grid-column: 1/-1; text-align: center; padding: 60px; color: var(--text-muted);">
-                            No devices registered yet. Click "Register Device" to add one.
+                        <div class="empty-state">
+                            <div class="empty-state-icon">📡</div>
+                            <p>No devices registered yet.</p>
+                            <p style="color: var(--text-muted); margin-top: 8px;">Click "Register Device" to add your first JamBox.</p>
                         </div>
                     `;
                     return;
@@ -306,21 +993,33 @@
                         <div class="device-header">
                             <div>
                                 <div class="device-id">${d.device_id}</div>
-                                <div class="device-project">${d.project_name || 'No project'}</div>
+                                <div class="device-project">${d.project_name || 'Unassigned'}</div>
                             </div>
-                            <span class="status-badge ${d.connection_status}">${d.connection_status}</span>
+                            <div class="status-indicator ${d.connection_status}">${d.connection_status}</div>
                         </div>
-                        <div class="device-info">
-                            <div>${d.location_name || 'No location'}</div>
-                            <div>${d.last_signal_dbm ? d.last_signal_dbm + ' dBm' : '–'}</div>
-                            <div>v${d.firmware_version || '?'}</div>
-                            <div>${d.last_seen_ago}</div>
+                        <div class="device-metrics">
+                            <div class="metric">
+                                <div class="metric-label">Location</div>
+                                <div class="metric-value">${d.location_name || '—'}</div>
+                            </div>
+                            <div class="metric">
+                                <div class="metric-label">Signal</div>
+                                <div class="metric-value">${d.last_signal_dbm ? d.last_signal_dbm + ' dBm' : '—'}</div>
+                            </div>
+                            <div class="metric">
+                                <div class="metric-label">Firmware</div>
+                                <div class="metric-value">v${d.firmware_version || '—'}</div>
+                            </div>
+                            <div class="metric">
+                                <div class="metric-label">Last Seen</div>
+                                <div class="metric-value">${d.last_seen_ago || 'Never'}</div>
+                            </div>
                         </div>
                     </div>
                 `).join('');
 
             } catch (err) {
-                devicesEl.innerHTML = `<div class="error">Failed to load devices: ${err.message}</div>`;
+                devicesEl.innerHTML = `<div class="error-state">Failed to load fleet: ${err.message}</div>`;
             }
         }
 
@@ -329,7 +1028,12 @@
             modal.innerHTML = `
                 <div class="modal-overlay" onclick="if(event.target===this)closeModal()">
                     <div class="modal">
-                        <div class="loading">Loading device details...</div>
+                        <div class="modal-body">
+                            <div class="loading-state" style="padding: 40px;">
+                                <div class="loading-spinner"></div>
+                                <span>Loading device data...</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
             `;
@@ -342,52 +1046,72 @@
                 modal.innerHTML = `
                     <div class="modal-overlay" onclick="if(event.target===this)closeModal()">
                         <div class="modal">
-                            <button class="modal-close" onclick="closeModal()">&times;</button>
-                            <h2>${device.device_id}</h2>
-                            <p style="color: var(--text-muted); margin-bottom: 20px;">${device.project_name || 'No project'}</p>
-
-                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px;">
-                                <div style="background: var(--bg-card); padding: 12px; border-radius: 8px;">
-                                    <div style="font-size: 11px; color: var(--text-muted);">Status</div>
-                                    <span class="status-badge ${device.connection_status}">${device.connection_status}</span>
+                            <div class="modal-header">
+                                <div>
+                                    <div class="modal-title">${device.device_id}</div>
+                                    <div class="modal-subtitle">${device.project_name || 'Unassigned Project'}</div>
                                 </div>
-                                <div style="background: var(--bg-card); padding: 12px; border-radius: 8px;">
-                                    <div style="font-size: 11px; color: var(--text-muted);">Last Seen</div>
-                                    <div>${device.last_seen_ago}</div>
-                                </div>
-                                <div style="background: var(--bg-card); padding: 12px; border-radius: 8px;">
-                                    <div style="font-size: 11px; color: var(--text-muted);">Signal</div>
-                                    <div>${device.last_signal_dbm ? device.last_signal_dbm + ' dBm' : '–'}</div>
-                                </div>
-                                <div style="background: var(--bg-card); padding: 12px; border-radius: 8px;">
-                                    <div style="font-size: 11px; color: var(--text-muted);">Firmware</div>
-                                    <div>v${device.firmware_version || '?'}</div>
-                                </div>
+                                <button class="modal-close" onclick="closeModal()">×</button>
                             </div>
-
-                            <h3 style="font-size: 14px; margin-bottom: 12px;">Recent Readings</h3>
-                            ${recent_readings.length === 0 ? '<p style="color: var(--text-muted);">No readings yet.</p>' : `
-                                <div style="max-height: 200px; overflow-y: auto; font-size: 12px;">
-                                    <table style="width: 100%; border-collapse: collapse;">
-                                        <tr style="color: var(--text-muted);">
-                                            <th style="text-align: left; padding: 8px;">Time</th>
-                                            <th style="text-align: right; padding: 8px;">Impr</th>
-                                            <th style="text-align: right; padding: 8px;">Unique</th>
-                                        </tr>
-                                        ${recent_readings.slice(0, 10).map(r => `
-                                            <tr style="border-top: 1px solid var(--border);">
-                                                <td style="padding: 8px;">${new Date(r.timestamp).toLocaleString()}</td>
-                                                <td style="text-align: right; padding: 8px;">${r.impressions}</td>
-                                                <td style="text-align: right; padding: 8px;">${r.unique_count}</td>
-                                            </tr>
-                                        `).join('')}
-                                    </table>
+                            <div class="modal-body">
+                                <div style="margin-bottom: 20px;">
+                                    <div class="status-indicator ${device.connection_status}" style="display: inline-flex;">${device.connection_status}</div>
                                 </div>
-                            `}
 
-                            <div style="margin-top: 20px; display: flex; gap: 12px;">
-                                <button class="btn btn-secondary" style="background: rgba(245,158,11,0.15); color: var(--warning);" onclick="regenerateToken('${device.device_id}')">Regenerate Token</button>
-                                <button class="btn btn-secondary" onclick="closeModal()">Close</button>
+                                <div class="detail-stats">
+                                    <div class="detail-stat">
+                                        <div class="detail-stat-label">Last Contact</div>
+                                        <div class="detail-stat-value">${device.last_seen_ago || 'Never'}</div>
+                                    </div>
+                                    <div class="detail-stat">
+                                        <div class="detail-stat-label">Signal Strength</div>
+                                        <div class="detail-stat-value">${device.last_signal_dbm ? device.last_signal_dbm + ' dBm' : '—'}</div>
+                                    </div>
+                                    <div class="detail-stat">
+                                        <div class="detail-stat-label">Location</div>
+                                        <div class="detail-stat-value">${device.location_name || '—'}</div>
+                                    </div>
+                                    <div class="detail-stat">
+                                        <div class="detail-stat-label">Firmware</div>
+                                        <div class="detail-stat-value">v${device.firmware_version || '—'}</div>
+                                    </div>
+                                </div>
+
+                                <div class="readings-section">
+                                    <div class="readings-title">Recent Readings</div>
+                                    ${recent_readings.length === 0
+                                        ? '<div class="readings-empty">No readings recorded yet.</div>'
+                                        : `
+                                            <div class="readings-table-wrapper">
+                                                <table class="readings-table">
+                                                    <thead>
+                                                        <tr>
+                                                            <th>Timestamp</th>
+                                                            <th>Impressions</th>
+                                                            <th>Unique</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        ${recent_readings.slice(0, 10).map(r => `
+                                                            <tr>
+                                                                <td>${new Date(r.timestamp).toLocaleString()}</td>
+                                                                <td>${r.impressions.toLocaleString()}</td>
+                                                                <td>${r.unique_count.toLocaleString()}</td>
+                                                            </tr>
+                                                        `).join('')}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        `
+                                    }
+                                </div>
+
+                                <div class="modal-actions">
+                                    <button class="btn btn-danger" onclick="regenerateToken('${device.device_id}')">
+                                        Regenerate Token
+                                    </button>
+                                    <button class="btn btn-ghost" onclick="closeModal()">Close</button>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -396,8 +1120,12 @@
                 modal.innerHTML = `
                     <div class="modal-overlay" onclick="if(event.target===this)closeModal()">
                         <div class="modal">
-                            <div class="error">Failed to load: ${err.message}</div>
-                            <button class="btn btn-secondary" onclick="closeModal()" style="margin-top: 16px;">Close</button>
+                            <div class="modal-body">
+                                <div class="error-state">Failed to load device: ${err.message}</div>
+                                <div class="modal-actions">
+                                    <button class="btn btn-ghost" onclick="closeModal()">Close</button>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 `;
@@ -409,28 +1137,34 @@
             modal.innerHTML = `
                 <div class="modal-overlay" onclick="if(event.target===this)closeModal()">
                     <div class="modal">
-                        <button class="modal-close" onclick="closeModal()">&times;</button>
-                        <h2>Register New Device</h2>
-
-                        <div class="form-group">
-                            <label>Device ID *</label>
-                            <input type="text" id="reg_device_id" placeholder="JBNB0001" maxlength="8" oninput="this.value=this.value.toUpperCase()">
-                            <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">Format: JBNB + 4 digits</div>
+                        <div class="modal-header">
+                            <div>
+                                <div class="modal-title">Register Device</div>
+                                <div class="modal-subtitle">Add a new JamBox to your fleet</div>
+                            </div>
+                            <button class="modal-close" onclick="closeModal()">×</button>
                         </div>
+                        <div class="modal-body">
+                            <div class="form-group">
+                                <label class="form-label">Device ID</label>
+                                <input type="text" class="form-input mono" id="reg_device_id" placeholder="JBNB0001" maxlength="8" oninput="this.value=this.value.toUpperCase()">
+                                <div class="form-hint">Format: JBNB followed by 4 digits</div>
+                            </div>
 
-                        <div class="form-group">
-                            <label>Project Name</label>
-                            <input type="text" id="reg_project" placeholder="e.g., Client ABC Network">
-                        </div>
+                            <div class="form-group">
+                                <label class="form-label">Project Name</label>
+                                <input type="text" class="form-input" id="reg_project" placeholder="e.g., Downtown Network">
+                            </div>
 
-                        <div class="form-group">
-                            <label>Location</label>
-                            <input type="text" id="reg_location" placeholder="e.g., Downtown Mall">
-                        </div>
+                            <div class="form-group">
+                                <label class="form-label">Location</label>
+                                <input type="text" class="form-input" id="reg_location" placeholder="e.g., Main Street Mall">
+                            </div>
 
-                        <div style="display: flex; gap: 12px; margin-top: 20px;">
-                            <button class="btn btn-primary" onclick="registerDevice()">Register</button>
-                            <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+                            <div class="modal-actions">
+                                <button class="btn btn-primary" onclick="registerDevice()">Register Device</button>
+                                <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -460,7 +1194,6 @@
                 });
 
                 const data = await res.json();
-
                 if (!res.ok) throw new Error(data.error);
 
                 showTokenModal(deviceId, data.token);
@@ -475,14 +1208,29 @@
             modal.innerHTML = `
                 <div class="modal-overlay">
                     <div class="modal">
-                        <h2 style="color: var(--success);">Device ${deviceId} Registered</h2>
-                        <p style="color: var(--text-secondary); margin-bottom: 16px;">Save this token - it will only be shown once!</p>
+                        <div class="modal-header">
+                            <div>
+                                <div class="modal-title" style="color: var(--status-online);">✓ ${deviceId}</div>
+                                <div class="modal-subtitle">Device registered successfully</div>
+                            </div>
+                        </div>
+                        <div class="modal-body">
+                            <div class="token-container">
+                                <div class="token-label">
+                                    <span>🔑</span> Authentication Token
+                                </div>
+                                <div class="token-value" id="tokenValue">${token}</div>
+                            </div>
 
-                        <div class="token-display" id="tokenValue">${token}</div>
+                            <div class="token-warning">
+                                <span>⚠️</span>
+                                <span>This token will only be shown once. Save it securely before closing this dialog.</span>
+                            </div>
 
-                        <div style="display: flex; gap: 12px;">
-                            <button class="btn btn-secondary" onclick="copyToken()">Copy Token</button>
-                            <button class="btn btn-primary" onclick="closeModal(); loadDevices();">Done</button>
+                            <div class="modal-actions">
+                                <button class="btn btn-ghost" onclick="copyToken()">Copy Token</button>
+                                <button class="btn btn-primary" onclick="closeModal(); loadDevices();">Done</button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -491,11 +1239,20 @@
 
         function copyToken() {
             const token = document.getElementById('tokenValue').textContent;
-            navigator.clipboard.writeText(token).then(() => alert('Token copied!'));
+            navigator.clipboard.writeText(token).then(() => {
+                const btn = event.target;
+                const original = btn.textContent;
+                btn.textContent = 'Copied!';
+                btn.style.color = 'var(--status-online)';
+                setTimeout(() => {
+                    btn.textContent = original;
+                    btn.style.color = '';
+                }, 2000);
+            });
         }
 
         async function regenerateToken(deviceId) {
-            if (!confirm(`Regenerate token for ${deviceId}? The device will need to be re-flashed.`)) return;
+            if (!confirm(`Regenerate token for ${deviceId}?\n\nThe current token will be invalidated and the device will need to be re-flashed.`)) return;
 
             try {
                 const res = await fetch(`${API_BASE}/device/${deviceId}/regenerate`, { method: 'POST' });
@@ -506,7 +1263,7 @@
                 showTokenModal(deviceId, data.token);
 
             } catch (err) {
-                alert('Failed: ' + err.message);
+                alert('Failed to regenerate token: ' + err.message);
             }
         }
 
@@ -514,7 +1271,7 @@
             document.getElementById('modal').innerHTML = '';
         }
 
-        // Load on page load
+        // Initialize
         loadDevices();
     </script>
 </body>
