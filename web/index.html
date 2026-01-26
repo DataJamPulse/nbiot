@@ -741,6 +741,206 @@
             color: var(--text-primary);
         }
 
+        /* Device type badges */
+        .device-type-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 500;
+        }
+        .badge-apple {
+            background: rgba(147, 147, 147, 0.2);
+            color: #aaa;
+        }
+        .badge-android {
+            background: rgba(61, 220, 132, 0.15);
+            color: #3DDC84;
+        }
+
+        /* Hourly chart */
+        .chart-section {
+            margin-top: 32px;
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-lg);
+            padding: 24px;
+        }
+
+        .chart-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .chart-title {
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            color: var(--text-muted);
+        }
+
+        .chart-filters {
+            display: flex;
+            gap: 8px;
+        }
+
+        .chart-filter-btn {
+            padding: 6px 14px;
+            border-radius: 6px;
+            border: 1px solid var(--border-subtle);
+            background: var(--bg-deep);
+            color: var(--text-muted);
+            font-family: var(--font-display);
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .chart-filter-btn:hover {
+            border-color: var(--border-accent);
+            color: var(--text-secondary);
+        }
+
+        .chart-filter-btn.active {
+            background: var(--accent-pink);
+            border-color: var(--accent-pink);
+            color: white;
+        }
+
+        .chart-container {
+            height: 200px;
+            display: flex;
+            align-items: flex-end;
+            gap: 2px;
+            padding: 10px 0;
+        }
+
+        .chart-bar-group {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            min-width: 0;
+        }
+
+        .chart-bar {
+            width: 100%;
+            max-width: 40px;
+            border-radius: 3px 3px 0 0;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+
+        .chart-bar.impressions {
+            background: linear-gradient(180deg, var(--accent-pink), var(--accent-coral));
+        }
+
+        .chart-bar.unique {
+            background: var(--status-online);
+        }
+
+        .chart-bar:hover {
+            filter: brightness(1.2);
+        }
+
+        .chart-label {
+            font-size: 9px;
+            color: var(--text-muted);
+            writing-mode: vertical-rl;
+            transform: rotate(180deg);
+            max-height: 60px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .chart-legend {
+            display: flex;
+            justify-content: center;
+            gap: 24px;
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border-subtle);
+        }
+
+        .legend-item-chart {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .legend-color {
+            width: 12px;
+            height: 12px;
+            border-radius: 3px;
+        }
+
+        .legend-color.impressions {
+            background: linear-gradient(135deg, var(--accent-pink), var(--accent-coral));
+        }
+
+        .legend-color.unique { background: var(--status-online); }
+        .legend-color.apple { background: #888; }
+        .legend-color.android { background: #3DDC84; }
+
+        /* Today's metrics row */
+        .metrics-breakdown {
+            display: flex;
+            gap: 16px;
+            margin-top: 16px;
+            flex-wrap: wrap;
+        }
+
+        .metric-breakdown-card {
+            flex: 1;
+            min-width: 140px;
+            background: var(--bg-deep);
+            border-radius: var(--radius-md);
+            padding: 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .metric-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: var(--radius-sm);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+        }
+
+        .metric-icon.apple { background: rgba(147, 147, 147, 0.2); }
+        .metric-icon.android { background: rgba(61, 220, 132, 0.15); }
+        .metric-icon.signal { background: rgba(230, 47, 110, 0.15); }
+        .metric-icon.impressions { background: rgba(233, 75, 82, 0.15); }
+
+        .metric-data {
+            flex: 1;
+        }
+
+        .metric-data-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+        }
+
+        .metric-data-value {
+            font-family: var(--font-mono);
+            font-size: 20px;
+            font-weight: 600;
+            color: var(--text-bright);
+        }
+
         .readings-table tr:last-child td {
             border-bottom: none;
         }
@@ -901,8 +1101,27 @@
 
         <main class="main">
             <div id="stats" class="stats-row"></div>
+            <div id="todayMetrics" class="metrics-breakdown"></div>
 
-            <div class="section-header">
+            <div id="chartSection" class="chart-section" style="display: none;">
+                <div class="chart-header">
+                    <span class="chart-title">Hourly Activity</span>
+                    <div class="chart-filters">
+                        <button class="chart-filter-btn active" onclick="setChartDays(1)">24h</button>
+                        <button class="chart-filter-btn" onclick="setChartDays(3)">3 Days</button>
+                        <button class="chart-filter-btn" onclick="setChartDays(7)">7 Days</button>
+                    </div>
+                </div>
+                <div id="hourlyChart" class="chart-container"></div>
+                <div class="chart-legend">
+                    <div class="legend-item-chart"><span class="legend-color impressions"></span> Impressions</div>
+                    <div class="legend-item-chart"><span class="legend-color unique"></span> Unique</div>
+                    <div class="legend-item-chart"><span class="legend-color apple"></span> Apple</div>
+                    <div class="legend-item-chart"><span class="legend-color android"></span> Android</div>
+                </div>
+            </div>
+
+            <div class="section-header" style="margin-top: 32px;">
                 <span class="section-title">Fleet Devices</span>
             </div>
 
@@ -937,6 +1156,7 @@
 
     <script>
         const API_BASE = '/.netlify/functions/nbiot-api';
+        let currentChartDays = 1;
 
         async function loadDevices() {
             const devicesEl = document.getElementById('devices');
@@ -975,6 +1195,9 @@
                         <div class="stat-value">${stats.offline}</div>
                     </div>
                 `;
+
+                // Load today's detailed metrics
+                loadTodayMetrics();
 
                 // Render devices
                 if (devices.length === 0) {
@@ -1089,14 +1312,18 @@
                                                             <th>Timestamp</th>
                                                             <th>Impressions</th>
                                                             <th>Unique</th>
+                                                            <th>Apple</th>
+                                                            <th>Android</th>
                                                         </tr>
                                                     </thead>
                                                     <tbody>
                                                         ${recent_readings.slice(0, 10).map(r => `
                                                             <tr>
                                                                 <td>${new Date(r.timestamp).toLocaleString()}</td>
-                                                                <td>${r.impressions.toLocaleString()}</td>
-                                                                <td>${r.unique_count.toLocaleString()}</td>
+                                                                <td>${(r.impressions || 0).toLocaleString()}</td>
+                                                                <td>${(r.unique_count || 0).toLocaleString()}</td>
+                                                                <td><span class="device-type-badge badge-apple">${(r.apple_count || 0).toLocaleString()}</span></td>
+                                                                <td><span class="device-type-badge badge-android">🤖 ${(r.android_count || 0).toLocaleString()}</span></td>
                                                             </tr>
                                                         `).join('')}
                                                     </tbody>
@@ -1269,6 +1496,110 @@
 
         function closeModal() {
             document.getElementById('modal').innerHTML = '';
+        }
+
+        async function loadTodayMetrics() {
+            try {
+                const res = await fetch(`${API_BASE}/stats`);
+                if (!res.ok) return;
+                const data = await res.json();
+                const { today } = data;
+
+                const metricsEl = document.getElementById('todayMetrics');
+                metricsEl.innerHTML = `
+                    <div class="metric-breakdown-card">
+                        <div class="metric-icon impressions">📊</div>
+                        <div class="metric-data">
+                            <div class="metric-data-label">Today's Impressions</div>
+                            <div class="metric-data-value">${(today.total_impressions || 0).toLocaleString()}</div>
+                        </div>
+                    </div>
+                    <div class="metric-breakdown-card">
+                        <div class="metric-icon" style="background: rgba(0, 229, 160, 0.15);">👥</div>
+                        <div class="metric-data">
+                            <div class="metric-data-label">Unique Devices</div>
+                            <div class="metric-data-value">${(today.total_unique || 0).toLocaleString()}</div>
+                        </div>
+                    </div>
+                    <div class="metric-breakdown-card">
+                        <div class="metric-icon apple"></div>
+                        <div class="metric-data">
+                            <div class="metric-data-label">Apple Devices</div>
+                            <div class="metric-data-value">${(today.total_apple || 0).toLocaleString()}</div>
+                        </div>
+                    </div>
+                    <div class="metric-breakdown-card">
+                        <div class="metric-icon android">🤖</div>
+                        <div class="metric-data">
+                            <div class="metric-data-label">Android Devices</div>
+                            <div class="metric-data-value">${(today.total_android || 0).toLocaleString()}</div>
+                        </div>
+                    </div>
+                `;
+
+                // Also load the hourly chart
+                loadHourlyChart(currentChartDays);
+            } catch (err) {
+                console.error('Failed to load today metrics:', err);
+            }
+        }
+
+        async function loadHourlyChart(days = 1) {
+            currentChartDays = days;
+            const chartEl = document.getElementById('hourlyChart');
+            const sectionEl = document.getElementById('chartSection');
+
+            // Update active button
+            document.querySelectorAll('.chart-filter-btn').forEach(btn => {
+                btn.classList.remove('active');
+                if (btn.textContent.includes(days === 1 ? '24h' : days === 3 ? '3 Days' : '7 Days')) {
+                    btn.classList.add('active');
+                }
+            });
+
+            try {
+                const res = await fetch(`${API_BASE}/hourly?days=${days}`);
+                if (!res.ok) throw new Error('Failed to load hourly data');
+                const data = await res.json();
+                const { hourly } = data;
+
+                if (!hourly || hourly.length === 0) {
+                    sectionEl.style.display = 'none';
+                    return;
+                }
+
+                sectionEl.style.display = 'block';
+
+                // Find max value for scaling
+                const maxVal = Math.max(...hourly.map(h => h.impressions), 1);
+
+                // Limit bars to show (max 48 for readability)
+                const displayHours = hourly.slice(-48);
+
+                chartEl.innerHTML = displayHours.map(h => {
+                    const impressionHeight = Math.max((h.impressions / maxVal) * 160, 2);
+                    const uniqueHeight = Math.max((h.unique_count / maxVal) * 160, 1);
+                    const hourLabel = h.hour.split(' ')[1] || h.hour;
+
+                    return `
+                        <div class="chart-bar-group" title="${h.hour}\nImpressions: ${h.impressions.toLocaleString()}\nUnique: ${h.unique_count.toLocaleString()}\nApple: ${h.apple_count.toLocaleString()}\nAndroid: ${h.android_count.toLocaleString()}">
+                            <div style="display: flex; gap: 1px; align-items: flex-end; height: 160px;">
+                                <div class="chart-bar impressions" style="height: ${impressionHeight}px; width: 8px;"></div>
+                                <div class="chart-bar unique" style="height: ${uniqueHeight}px; width: 6px;"></div>
+                            </div>
+                            <span class="chart-label">${hourLabel}</span>
+                        </div>
+                    `;
+                }).join('');
+
+            } catch (err) {
+                console.error('Failed to load hourly chart:', err);
+                sectionEl.style.display = 'none';
+            }
+        }
+
+        function setChartDays(days) {
+            loadHourlyChart(days);
         }
 
         // Initialize

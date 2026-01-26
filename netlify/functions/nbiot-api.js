@@ -1,12 +1,13 @@
 /**
- * NB-IoT Device Management API v1.0.0
+ * NB-IoT Device Management API v1.1.0
  * Standalone admin portal for NB-IoT JamBox fleet management.
  *
  * Endpoints:
  * - GET  /nbiot-api/devices         List all devices
  * - GET  /nbiot-api/device/:id      Get single device + readings
  * - GET  /nbiot-api/readings        Get readings (query: device_id, limit, days)
- * - GET  /nbiot-api/stats           Fleet statistics
+ * - GET  /nbiot-api/stats           Fleet statistics with Apple/Android breakdown
+ * - GET  /nbiot-api/hourly          Hourly aggregated data (query: device_id, days)
  * - POST /nbiot-api/device/register Register new device (proxy to Linode)
  * - POST /nbiot-api/device/:id/regenerate  Regenerate token (proxy to Linode)
  */
@@ -286,15 +287,20 @@ exports.handler = async (event) => {
       const devices = await supabaseQuery('GET', 'nbiot_devices?order=device_id');
       const formatted = (devices || []).map(formatDevice);
 
-      // Get today's readings
+      // Get today's readings with all metrics
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const todayStats = await supabaseQuery('GET',
-        `nbiot_readings?timestamp=gte.${today.toISOString()}&select=impressions,unique_count`
+        `nbiot_readings?timestamp=gte.${today.toISOString()}&select=impressions,unique_count,apple_count,android_count,signal_dbm`
       );
 
       const totalImpressions = (todayStats || []).reduce((sum, r) => sum + (r.impressions || 0), 0);
       const totalUnique = (todayStats || []).reduce((sum, r) => sum + (r.unique_count || 0), 0);
+      const totalApple = (todayStats || []).reduce((sum, r) => sum + (r.apple_count || 0), 0);
+      const totalAndroid = (todayStats || []).reduce((sum, r) => sum + (r.android_count || 0), 0);
+      const avgSignal = todayStats && todayStats.length > 0
+        ? Math.round(todayStats.reduce((sum, r) => sum + (r.signal_dbm || 0), 0) / todayStats.length)
+        : null;
 
       return {
         statusCode: 200,
@@ -309,7 +315,10 @@ exports.handler = async (event) => {
           today: {
             readings_count: (todayStats || []).length,
             total_impressions: totalImpressions,
-            total_unique: totalUnique
+            total_unique: totalUnique,
+            total_apple: totalApple,
+            total_android: totalAndroid,
+            avg_signal: avgSignal
           },
           devices: formatted.map(d => ({
             device_id: d.device_id,
@@ -317,6 +326,76 @@ exports.handler = async (event) => {
             last_seen: d.last_seen_ago,
             signal: d.last_signal_dbm
           }))
+        })
+      };
+    }
+
+    // =====================
+    // GET /hourly - Hourly aggregated data
+    // =====================
+    if (method === 'GET' && segments[0] === 'hourly') {
+      const days = Math.min(parseInt(query.days, 10) || 7, 30);
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - days);
+      startDate.setHours(0, 0, 0, 0);
+
+      let queryStr = `nbiot_readings?timestamp=gte.${startDate.toISOString()}&order=timestamp.asc`;
+
+      if (query.device_id) {
+        const sanitizedId = query.device_id.toUpperCase();
+        if (!/^JBNB\d{4}$/.test(sanitizedId)) {
+          return { statusCode: 400, headers, body: JSON.stringify({ error: 'Invalid device_id format' }) };
+        }
+        queryStr += `&device_id=eq.${sanitizedId}`;
+      }
+
+      const readings = await supabaseQuery('GET', queryStr);
+
+      // Aggregate by hour
+      const hourlyMap = {};
+      (readings || []).forEach(r => {
+        const date = new Date(r.timestamp);
+        const hourKey = `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')} ${String(date.getHours()).padStart(2,'0')}:00`;
+
+        if (!hourlyMap[hourKey]) {
+          hourlyMap[hourKey] = {
+            hour: hourKey,
+            impressions: 0,
+            unique_count: 0,
+            apple_count: 0,
+            android_count: 0,
+            readings: 0,
+            avg_signal: []
+          };
+        }
+        hourlyMap[hourKey].impressions += r.impressions || 0;
+        hourlyMap[hourKey].unique_count += r.unique_count || 0;
+        hourlyMap[hourKey].apple_count += r.apple_count || 0;
+        hourlyMap[hourKey].android_count += r.android_count || 0;
+        hourlyMap[hourKey].readings += 1;
+        if (r.signal_dbm) hourlyMap[hourKey].avg_signal.push(r.signal_dbm);
+      });
+
+      // Convert to array and calculate avg signal
+      const hourly = Object.values(hourlyMap).map(h => ({
+        ...h,
+        avg_signal: h.avg_signal.length > 0
+          ? Math.round(h.avg_signal.reduce((a,b) => a+b, 0) / h.avg_signal.length)
+          : null
+      }));
+
+      return {
+        statusCode: 200,
+        headers,
+        body: JSON.stringify({
+          hourly,
+          period: { start: startDate.toISOString(), days },
+          totals: {
+            impressions: hourly.reduce((s, h) => s + h.impressions, 0),
+            unique_count: hourly.reduce((s, h) => s + h.unique_count, 0),
+            apple_count: hourly.reduce((s, h) => s + h.apple_count, 0),
+            android_count: hourly.reduce((s, h) => s + h.android_count, 0)
+          }
         })
       };
     }
@@ -401,7 +480,7 @@ exports.handler = async (event) => {
       headers,
       body: JSON.stringify({
         error: 'Not found',
-        available: ['GET /devices', 'GET /device/:id', 'GET /readings', 'GET /stats', 'POST /device/register', 'POST /device/:id/regenerate']
+        available: ['GET /devices', 'GET /device/:id', 'GET /readings', 'GET /stats', 'GET /hourly', 'POST /device/register', 'POST /device/:id/regenerate']
       })
     };
 
