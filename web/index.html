@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NB-IoT JamBox Admin</title>
+    <style>
+        :root {
+            --bg-primary: #0f0f0f;
+            --bg-secondary: #1a1a1a;
+            --bg-card: #242424;
+            --text-primary: #ffffff;
+            --text-secondary: #a0a0a0;
+            --text-muted: #666666;
+            --accent: #E62F6E;
+            --accent-secondary: #E94B52;
+            --success: #10B981;
+            --warning: #F59E0B;
+            --danger: #EF4444;
+            --border: #333333;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            padding: 24px;
+        }
+
+        .container { max-width: 1200px; margin: 0 auto; }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 32px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        h1 {
+            font-size: 24px;
+            background: linear-gradient(135deg, var(--accent), var(--accent-secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: opacity 0.2s;
+        }
+        .btn:hover { opacity: 0.9; }
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent), var(--accent-secondary));
+            color: white;
+        }
+        .btn-secondary {
+            background: var(--bg-card);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+        }
+
+        .stats-bar {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+        }
+
+        .stat-badge {
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 600;
+        }
+        .stat-badge.online { background: rgba(16, 185, 129, 0.15); color: var(--success); }
+        .stat-badge.warning { background: rgba(245, 158, 11, 0.15); color: var(--warning); }
+        .stat-badge.offline { background: rgba(239, 68, 68, 0.15); color: var(--danger); }
+        .stat-badge.total { background: var(--bg-card); color: var(--text-secondary); }
+
+        .devices-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 16px;
+            margin-bottom: 32px;
+        }
+
+        .device-card {
+            background: var(--bg-card);
+            border-radius: 12px;
+            padding: 20px;
+            border: 1px solid var(--border);
+            cursor: pointer;
+            transition: border-color 0.2s;
+        }
+        .device-card:hover { border-color: var(--accent); }
+
+        .device-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 16px;
+        }
+
+        .device-id {
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .device-project {
+            font-size: 13px;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        .status-badge {
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .status-badge.online { background: rgba(16, 185, 129, 0.15); color: var(--success); }
+        .status-badge.warning { background: rgba(245, 158, 11, 0.15); color: var(--warning); }
+        .status-badge.offline { background: rgba(239, 68, 68, 0.15); color: var(--danger); }
+        .status-badge.unknown { background: var(--bg-secondary); color: var(--text-muted); }
+
+        .device-info {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        .loading {
+            text-align: center;
+            padding: 60px;
+            color: var(--text-muted);
+        }
+
+        .error {
+            text-align: center;
+            padding: 40px;
+            color: var(--danger);
+            background: rgba(239, 68, 68, 0.1);
+            border-radius: 12px;
+        }
+
+        /* Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            padding: 20px;
+        }
+        .modal {
+            background: var(--bg-secondary);
+            border-radius: 16px;
+            padding: 24px;
+            max-width: 500px;
+            width: 100%;
+            max-height: 90vh;
+            overflow-y: auto;
+            border: 1px solid var(--border);
+        }
+        .modal h2 {
+            margin-bottom: 20px;
+            font-size: 20px;
+        }
+        .modal-close {
+            float: right;
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            font-size: 24px;
+            cursor: pointer;
+        }
+
+        .form-group {
+            margin-bottom: 16px;
+        }
+        .form-group label {
+            display: block;
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-bottom: 6px;
+        }
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: var(--bg-card);
+            color: var(--text-primary);
+            font-size: 14px;
+        }
+
+        .token-display {
+            background: var(--bg-card);
+            padding: 16px;
+            border-radius: 8px;
+            margin: 16px 0;
+            word-break: break-all;
+            font-family: monospace;
+            font-size: 12px;
+        }
+
+        .info-card {
+            background: var(--bg-card);
+            border-radius: 12px;
+            padding: 20px;
+            margin-top: 32px;
+        }
+        .info-card h3 {
+            font-size: 14px;
+            margin-bottom: 12px;
+            color: var(--text-secondary);
+        }
+        .info-card ul {
+            margin-left: 20px;
+            color: var(--text-muted);
+            font-size: 13px;
+        }
+        .info-card li { margin-bottom: 4px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div>
+                <h1>NB-IoT JamBox Admin</h1>
+                <p style="color: var(--text-muted); font-size: 13px; margin-top: 4px;">Fleet monitoring and device management</p>
+            </div>
+            <div style="display: flex; gap: 12px;">
+                <button class="btn btn-primary" onclick="showRegisterModal()">+ Register Device</button>
+                <button class="btn btn-secondary" onclick="loadDevices()">Refresh</button>
+            </div>
+        </header>
+
+        <div id="stats" class="stats-bar"></div>
+
+        <div id="devices" class="devices-grid">
+            <div class="loading">Loading devices...</div>
+        </div>
+
+        <div class="info-card">
+            <h3>Status Indicators</h3>
+            <ul>
+                <li><span style="color: var(--success);">Online</span> - Heartbeat within 24 hours</li>
+                <li><span style="color: var(--warning);">Warning</span> - Heartbeat 24-48 hours ago</li>
+                <li><span style="color: var(--danger);">Offline</span> - No heartbeat for 48+ hours</li>
+            </ul>
+        </div>
+    </div>
+
+    <div id="modal"></div>
+
+    <script>
+        const API_BASE = '/.netlify/functions/nbiot-api';
+
+        async function loadDevices() {
+            const devicesEl = document.getElementById('devices');
+            const statsEl = document.getElementById('stats');
+
+            devicesEl.innerHTML = '<div class="loading">Loading devices...</div>';
+
+            try {
+                const res = await fetch(`${API_BASE}/devices`);
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+                const data = await res.json();
+                const { devices, stats } = data;
+
+                // Render stats
+                statsEl.innerHTML = `
+                    <span class="stat-badge total">${stats.total} Total</span>
+                    <span class="stat-badge online">${stats.online} Online</span>
+                    ${stats.warning > 0 ? `<span class="stat-badge warning">${stats.warning} Warning</span>` : ''}
+                    ${stats.offline > 0 ? `<span class="stat-badge offline">${stats.offline} Offline</span>` : ''}
+                `;
+
+                // Render devices
+                if (devices.length === 0) {
+                    devicesEl.innerHTML = `
+                        <div style="grid-column: 1/-1; text-align: center; padding: 60px; color: var(--text-muted);">
+                            No devices registered yet. Click "Register Device" to add one.
+                        </div>
+                    `;
+                    return;
+                }
+
+                devicesEl.innerHTML = devices.map(d => `
+                    <div class="device-card" onclick="showDeviceDetail('${d.device_id}')">
+                        <div class="device-header">
+                            <div>
+                                <div class="device-id">${d.device_id}</div>
+                                <div class="device-project">${d.project_name || 'No project'}</div>
+                            </div>
+                            <span class="status-badge ${d.connection_status}">${d.connection_status}</span>
+                        </div>
+                        <div class="device-info">
+                            <div>${d.location_name || 'No location'}</div>
+                            <div>${d.last_signal_dbm ? d.last_signal_dbm + ' dBm' : '–'}</div>
+                            <div>v${d.firmware_version || '?'}</div>
+                            <div>${d.last_seen_ago}</div>
+                        </div>
+                    </div>
+                `).join('');
+
+            } catch (err) {
+                devicesEl.innerHTML = `<div class="error">Failed to load devices: ${err.message}</div>`;
+            }
+        }
+
+        async function showDeviceDetail(deviceId) {
+            const modal = document.getElementById('modal');
+            modal.innerHTML = `
+                <div class="modal-overlay" onclick="if(event.target===this)closeModal()">
+                    <div class="modal">
+                        <div class="loading">Loading device details...</div>
+                    </div>
+                </div>
+            `;
+
+            try {
+                const res = await fetch(`${API_BASE}/device/${deviceId}`);
+                const data = await res.json();
+                const { device, recent_readings } = data;
+
+                modal.innerHTML = `
+                    <div class="modal-overlay" onclick="if(event.target===this)closeModal()">
+                        <div class="modal">
+                            <button class="modal-close" onclick="closeModal()">&times;</button>
+                            <h2>${device.device_id}</h2>
+                            <p style="color: var(--text-muted); margin-bottom: 20px;">${device.project_name || 'No project'}</p>
+
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px;">
+                                <div style="background: var(--bg-card); padding: 12px; border-radius: 8px;">
+                                    <div style="font-size: 11px; color: var(--text-muted);">Status</div>
+                                    <span class="status-badge ${device.connection_status}">${device.connection_status}</span>
+                                </div>
+                                <div style="background: var(--bg-card); padding: 12px; border-radius: 8px;">
+                                    <div style="font-size: 11px; color: var(--text-muted);">Last Seen</div>
+                                    <div>${device.last_seen_ago}</div>
+                                </div>
+                                <div style="background: var(--bg-card); padding: 12px; border-radius: 8px;">
+                                    <div style="font-size: 11px; color: var(--text-muted);">Signal</div>
+                                    <div>${device.last_signal_dbm ? device.last_signal_dbm + ' dBm' : '–'}</div>
+                                </div>
+                                <div style="background: var(--bg-card); padding: 12px; border-radius: 8px;">
+                                    <div style="font-size: 11px; color: var(--text-muted);">Firmware</div>
+                                    <div>v${device.firmware_version || '?'}</div>
+                                </div>
+                            </div>
+
+                            <h3 style="font-size: 14px; margin-bottom: 12px;">Recent Readings</h3>
+                            ${recent_readings.length === 0 ? '<p style="color: var(--text-muted);">No readings yet.</p>' : `
+                                <div style="max-height: 200px; overflow-y: auto; font-size: 12px;">
+                                    <table style="width: 100%; border-collapse: collapse;">
+                                        <tr style="color: var(--text-muted);">
+                                            <th style="text-align: left; padding: 8px;">Time</th>
+                                            <th style="text-align: right; padding: 8px;">Impr</th>
+                                            <th style="text-align: right; padding: 8px;">Unique</th>
+                                        </tr>
+                                        ${recent_readings.slice(0, 10).map(r => `
+                                            <tr style="border-top: 1px solid var(--border);">
+                                                <td style="padding: 8px;">${new Date(r.timestamp).toLocaleString()}</td>
+                                                <td style="text-align: right; padding: 8px;">${r.impressions}</td>
+                                                <td style="text-align: right; padding: 8px;">${r.unique_count}</td>
+                                            </tr>
+                                        `).join('')}
+                                    </table>
+                                </div>
+                            `}
+
+                            <div style="margin-top: 20px; display: flex; gap: 12px;">
+                                <button class="btn btn-secondary" style="background: rgba(245,158,11,0.15); color: var(--warning);" onclick="regenerateToken('${device.device_id}')">Regenerate Token</button>
+                                <button class="btn btn-secondary" onclick="closeModal()">Close</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            } catch (err) {
+                modal.innerHTML = `
+                    <div class="modal-overlay" onclick="if(event.target===this)closeModal()">
+                        <div class="modal">
+                            <div class="error">Failed to load: ${err.message}</div>
+                            <button class="btn btn-secondary" onclick="closeModal()" style="margin-top: 16px;">Close</button>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        function showRegisterModal() {
+            const modal = document.getElementById('modal');
+            modal.innerHTML = `
+                <div class="modal-overlay" onclick="if(event.target===this)closeModal()">
+                    <div class="modal">
+                        <button class="modal-close" onclick="closeModal()">&times;</button>
+                        <h2>Register New Device</h2>
+
+                        <div class="form-group">
+                            <label>Device ID *</label>
+                            <input type="text" id="reg_device_id" placeholder="JBNB0001" maxlength="8" oninput="this.value=this.value.toUpperCase()">
+                            <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">Format: JBNB + 4 digits</div>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Project Name</label>
+                            <input type="text" id="reg_project" placeholder="e.g., Client ABC Network">
+                        </div>
+
+                        <div class="form-group">
+                            <label>Location</label>
+                            <input type="text" id="reg_location" placeholder="e.g., Downtown Mall">
+                        </div>
+
+                        <div style="display: flex; gap: 12px; margin-top: 20px;">
+                            <button class="btn btn-primary" onclick="registerDevice()">Register</button>
+                            <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            setTimeout(() => document.getElementById('reg_device_id').focus(), 100);
+        }
+
+        async function registerDevice() {
+            const deviceId = document.getElementById('reg_device_id').value.trim();
+            const project = document.getElementById('reg_project').value.trim();
+            const location = document.getElementById('reg_location').value.trim();
+
+            if (!deviceId || !/^JBNB\d{4}$/.test(deviceId)) {
+                alert('Device ID must be JBNB followed by 4 digits');
+                return;
+            }
+
+            try {
+                const res = await fetch(`${API_BASE}/device/register`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        device_id: deviceId,
+                        project_name: project || null,
+                        location_name: location || null
+                    })
+                });
+
+                const data = await res.json();
+
+                if (!res.ok) throw new Error(data.error);
+
+                showTokenModal(deviceId, data.token);
+
+            } catch (err) {
+                alert('Registration failed: ' + err.message);
+            }
+        }
+
+        function showTokenModal(deviceId, token) {
+            const modal = document.getElementById('modal');
+            modal.innerHTML = `
+                <div class="modal-overlay">
+                    <div class="modal">
+                        <h2 style="color: var(--success);">Device ${deviceId} Registered</h2>
+                        <p style="color: var(--text-secondary); margin-bottom: 16px;">Save this token - it will only be shown once!</p>
+
+                        <div class="token-display" id="tokenValue">${token}</div>
+
+                        <div style="display: flex; gap: 12px;">
+                            <button class="btn btn-secondary" onclick="copyToken()">Copy Token</button>
+                            <button class="btn btn-primary" onclick="closeModal(); loadDevices();">Done</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function copyToken() {
+            const token = document.getElementById('tokenValue').textContent;
+            navigator.clipboard.writeText(token).then(() => alert('Token copied!'));
+        }
+
+        async function regenerateToken(deviceId) {
+            if (!confirm(`Regenerate token for ${deviceId}? The device will need to be re-flashed.`)) return;
+
+            try {
+                const res = await fetch(`${API_BASE}/device/${deviceId}/regenerate`, { method: 'POST' });
+                const data = await res.json();
+
+                if (!res.ok) throw new Error(data.error);
+
+                showTokenModal(deviceId, data.token);
+
+            } catch (err) {
+                alert('Failed: ' + err.message);
+            }
+        }
+
+        function closeModal() {
+            document.getElementById('modal').innerHTML = '';
+        }
+
+        // Load on page load
+        loadDevices();
+    </script>
+</body>
+</html>
