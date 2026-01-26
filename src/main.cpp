@@ -1603,7 +1603,7 @@ void setup() {
     delay(1000);
 
     // Set boot timestamp (would use NTP in production)
-    g_bootTimestamp = 1737820800;  // 2025-01-25T12:00:00Z as placeholder
+    g_bootTimestamp = 1769515200;  // 2026-01-27T08:00:00Z - update manually until NTP added
 
     // Perform WiFi geolocation scan FIRST (fast, before network init)
     Serial.println("[INIT] Performing geolocation scan...");

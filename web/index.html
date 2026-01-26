@@ -755,7 +755,7 @@
             background: rgba(147, 147, 147, 0.2);
             color: #aaa;
         }
-        .badge-android {
+        .badge-other {
             background: rgba(61, 220, 132, 0.15);
             color: #3DDC84;
         }
@@ -887,7 +887,7 @@
 
         .legend-color.unique { background: var(--status-online); }
         .legend-color.apple { background: #888; }
-        .legend-color.android { background: #3DDC84; }
+        .legend-color.other { background: #3DDC84; }
 
         /* Today's metrics row */
         .metrics-breakdown {
@@ -919,7 +919,7 @@
         }
 
         .metric-icon.apple { background: rgba(147, 147, 147, 0.2); }
-        .metric-icon.android { background: rgba(61, 220, 132, 0.15); }
+        .metric-icon.other { background: rgba(61, 220, 132, 0.15); }
         .metric-icon.signal { background: rgba(230, 47, 110, 0.15); }
         .metric-icon.impressions { background: rgba(233, 75, 82, 0.15); }
 
@@ -1117,7 +1117,7 @@
                     <div class="legend-item-chart"><span class="legend-color impressions"></span> Impressions</div>
                     <div class="legend-item-chart"><span class="legend-color unique"></span> Unique</div>
                     <div class="legend-item-chart"><span class="legend-color apple"></span> Apple</div>
-                    <div class="legend-item-chart"><span class="legend-color android"></span> Android</div>
+                    <div class="legend-item-chart"><span class="legend-color other"></span> Other</div>
                 </div>
             </div>
 
@@ -1313,7 +1313,7 @@
                                                             <th>Impressions</th>
                                                             <th>Unique</th>
                                                             <th>Apple</th>
-                                                            <th>Android</th>
+                                                            <th>Other</th>
                                                         </tr>
                                                     </thead>
                                                     <tbody>
@@ -1323,7 +1323,7 @@
                                                                 <td>${(r.impressions || 0).toLocaleString()}</td>
                                                                 <td>${(r.unique_count || 0).toLocaleString()}</td>
                                                                 <td><span class="device-type-badge badge-apple">${(r.apple_count || 0).toLocaleString()}</span></td>
-                                                                <td><span class="device-type-badge badge-android">🤖 ${(r.android_count || 0).toLocaleString()}</span></td>
+                                                                <td><span class="device-type-badge badge-other">${(r.android_count || 0).toLocaleString()}</span></td>
                                                             </tr>
                                                         `).join('')}
                                                     </tbody>
@@ -1529,9 +1529,9 @@
                         </div>
                     </div>
                     <div class="metric-breakdown-card">
-                        <div class="metric-icon android">🤖</div>
+                        <div class="metric-icon other">📱</div>
                         <div class="metric-data">
-                            <div class="metric-data-label">Android Devices</div>
+                            <div class="metric-data-label">Other Devices</div>
                             <div class="metric-data-value">${(today.total_android || 0).toLocaleString()}</div>
                         </div>
                     </div>
@@ -1582,7 +1582,7 @@
                     const hourLabel = h.hour.split(' ')[1] || h.hour;
 
                     return `
-                        <div class="chart-bar-group" title="${h.hour}\nImpressions: ${h.impressions.toLocaleString()}\nUnique: ${h.unique_count.toLocaleString()}\nApple: ${h.apple_count.toLocaleString()}\nAndroid: ${h.android_count.toLocaleString()}">
+                        <div class="chart-bar-group" title="${h.hour}\nImpressions: ${h.impressions.toLocaleString()}\nUnique: ${h.unique_count.toLocaleString()}\nApple: ${h.apple_count.toLocaleString()}\nOther: ${h.android_count.toLocaleString()}">
                             <div style="display: flex; gap: 1px; align-items: flex-end; height: 160px;">
                                 <div class="chart-bar impressions" style="height: ${impressionHeight}px; width: 8px;"></div>
                                 <div class="chart-bar unique" style="height: ${uniqueHeight}px; width: 6px;"></div>
