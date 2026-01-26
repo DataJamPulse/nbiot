@@ -2,6 +2,10 @@
   functions = "netlify/functions"
   publish = "web"
 
+[build.environment]
+  # Skip secrets scanning on dev docs and backend scripts (not deployed)
+  SECRETS_SCAN_OMIT_PATHS = "CLAUDE.md,backend/*,scripts/*"
+
 [[redirects]]
   from = "/api/*"
   to = "/.netlify/functions/:splat"
