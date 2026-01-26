@@ -23,9 +23,23 @@ Use these agents for specific tasks:
 
 ---
 
-## Current Status (2026-01-26)
+## Current Status (2026-01-25)
 
 **STATUS: FULL STACK OPERATIONAL** - Devices JBNB0001 and JBNB0002 actively sending data!
+
+### Active Devices
+| Device ID | Project | Location | Notes |
+|-----------|---------|----------|-------|
+| JBNB0001 | Data Jam | Dev Unit 1 | Production device |
+| JBNB0002 | — | — | Same physical hardware as JBNB0001 (re-registered) |
+
+**Note:** NB000001 is a test device with fake data (-999 dBm) - delete from Supabase.
+
+### NB-IoT Fleet Command Portal
+- **URL:** Deployed on Netlify (DataJamPulse/nbiot repo)
+- **GitHub:** github.com/DataJamPulse/nbiot
+- **Features:** Device list, hourly charts, Apple/Other breakdown, device registration
+- **API:** Netlify Functions → Supabase (reads) / Linode (device ops)
 
 ### Firmware Version: 2.9
 ### Backend Version: 2.4
@@ -46,6 +60,12 @@ Probe counting now deduplicates per MAC per minute (MRC "opportunity to see" sta
 - Same phone, 50 probes in 1 minute = 1 impression
 - Same phone, 50 probes over 10 minutes = 10 impressions
 - `unique` count represents "device-minutes" not "unique devices"
+
+### Device Classification
+Firmware classifies devices as **Apple vs Other** (not Android specifically):
+- **Apple:** Identified by OUI prefix (first 3 bytes of MAC)
+- **Other:** Everything else (Android, Windows, IoT devices, etc.)
+- **TODO:** UI currently mislabels "Other" as "Android" - needs fixing
 
 ### LED Status Colors
 | Color | Meaning |
@@ -75,7 +95,7 @@ Probe counting now deduplicates per MAC per minute (MRC "opportunity to see" sta
 | Flask backend v2.4 | ✓ Running with auth + geolocation + extended RSSI + heartbeat |
 | Device authentication | ✓ Token-based |
 | NB-IoT → Backend data flow | ✓ **VERIFIED** - JBNB0001 sending |
-| Probe capture firmware | ✓ **COMPLETE** - Privacy filter + Apple/Android classification |
+| Probe capture firmware | ✓ **COMPLETE** - Privacy filter + Apple/Other classification |
 | Supabase sync | ✓ COMPLETE - Cron job every 5 mins |
 
 ### Phase Status
@@ -88,6 +108,15 @@ Probe counting now deduplicates per MAC per minute (MRC "opportunity to see" sta
 
 ### Design Decision: HTTP (not HTTPS) from Device
 NB-IoT has built-in network-layer encryption. TLS handshakes are unreliable over narrowband cellular. HTTP is industry standard for NB-IoT deployments. This is intentional, not a bug.
+
+### Parked for Production
+- **Hologram API integration** - Data usage per device, last cellular connection time. Not needed yet, revisit at 20+ devices or when billing clients.
+
+### TODO (Next Session)
+- [ ] Fix UI labels: "Android" → "Other" in Fleet Command portal
+- [ ] Delete test device NB000001 from Supabase
+- [ ] Review overnight data from JBNB0001/JBNB0002
+- [ ] Polish Fleet Command UI based on real data
 
 ---
 
