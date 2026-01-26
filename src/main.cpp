@@ -1075,6 +1075,39 @@ static bool sendHeartbeat() {
 
     if (success) {
         Serial.println("[HEARTBEAT] Success");
+
+        // Check for remote command in response (look in JSON body after headers)
+        char* jsonBody = strstr(g_atBuffer, "\r\n\r\n");
+        if (!jsonBody) jsonBody = strstr(g_atBuffer, "{"); // Fallback
+
+        if (jsonBody) {
+            char* cmdStart = strstr(jsonBody, "\"command\":\"");
+            if (cmdStart) {
+                cmdStart += 11; // Skip past "command":"
+                char* cmdEnd = strchr(cmdStart, '"');
+
+                if (cmdEnd && (cmdEnd - cmdStart) < 31) { // Bounds check
+                    char command[32] = {0};
+                    size_t cmdLen = cmdEnd - cmdStart;
+                    memcpy(command, cmdStart, cmdLen);
+
+                    Serial.printf("[COMMAND] Received: %s\n", command);
+
+                    if (strcmp(command, "reboot") == 0) {
+                        Serial.println("[COMMAND] Reboot scheduled - closing connection first");
+                        atSendCommand("AT+CIPCLOSE=0", "OK", 5000);
+                        delay(1000);
+                        Serial.println("[COMMAND] Executing reboot now...");
+                        ESP.restart();
+                    } else if (strcmp(command, "send_now") == 0) {
+                        Serial.println("[COMMAND] Force send requested");
+                        g_forceSendRequested = true;
+                    } else {
+                        Serial.printf("[COMMAND] Unknown command: %s\n", command);
+                    }
+                }
+            }
+        }
     } else {
         Serial.println("[HEARTBEAT] Failed");
     }

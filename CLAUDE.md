@@ -23,23 +23,34 @@ Use these agents for specific tasks:
 
 ---
 
-## Current Status (2026-01-25)
+## Current Status (2026-01-26)
 
-**STATUS: FULL STACK OPERATIONAL** - Devices JBNB0001 and JBNB0002 actively sending data!
+**STATUS: FULL STACK OPERATIONAL** - Remote deployment active!
 
 ### Active Devices
 | Device ID | Project | Location | Notes |
 |-----------|---------|----------|-------|
-| JBNB0001 | Data Jam | Dev Unit 1 | Production device |
-| JBNB0002 | — | — | Same physical hardware as JBNB0001 (re-registered) |
-
-**Note:** NB000001 is a test device with fake data (-999 dBm) - delete from Supabase.
+| JBNB0001 | Data Jam | Dev Unit 1 | Local dev device |
+| JBNB0002 | Data Jam | Remote | Deployed 10 miles away, sending data ✓ |
 
 ### NB-IoT Fleet Command Portal
-- **URL:** Deployed on Netlify (DataJamPulse/nbiot repo)
+- **URL:** https://nbiot.netlify.app
 - **GitHub:** github.com/DataJamPulse/nbiot
-- **Features:** Device list, hourly charts, Apple/Other breakdown, device registration
+- **Features:** Device list, hourly charts, Apple/Other breakdown, device registration, remote commands
 - **API:** Netlify Functions → Supabase (reads) / Linode (device ops)
+
+### Remote Command System (v2.5)
+Devices can receive commands via heartbeat response:
+```bash
+# Force send data now
+curl -X POST "http://172.233.144.32:5000/api/device/JBNB0002/command" \
+  -H "Authorization: Bearer djnb-admin-2026-change-me" \
+  -H "Content-Type: application/json" -d '{"command":"send_now"}'
+
+# Reboot device
+curl -X POST "..." -d '{"command":"reboot"}'
+```
+Commands execute on next heartbeat (hourly) or data send (every 5 min).
 
 ### Firmware Version: 2.9
 ### Backend Version: 2.4
@@ -65,7 +76,6 @@ Probe counting now deduplicates per MAC per minute (MRC "opportunity to see" sta
 Firmware classifies devices as **Apple vs Other** (not Android specifically):
 - **Apple:** Identified by OUI prefix (first 3 bytes of MAC)
 - **Other:** Everything else (Android, Windows, IoT devices, etc.)
-- **TODO:** UI currently mislabels "Other" as "Android" - needs fixing
 
 ### LED Status Colors
 | Color | Meaning |
@@ -109,14 +119,14 @@ Firmware classifies devices as **Apple vs Other** (not Android specifically):
 ### Design Decision: HTTP (not HTTPS) from Device
 NB-IoT has built-in network-layer encryption. TLS handshakes are unreliable over narrowband cellular. HTTP is industry standard for NB-IoT deployments. This is intentional, not a bug.
 
-### Parked for Production
-- **Hologram API integration** - Data usage per device, last cellular connection time. Not needed yet, revisit at 20+ devices or when billing clients.
+### Parked for Later
+- **Hologram API integration** - Data usage per device, last cellular connection time. Revisit at 20+ devices or when billing clients.
+- **BLE Beacon advertising** - Proximity marketing feature. JamBox broadcasts beacon, client apps detect and trigger notifications. Hardware capable, needs firmware + client SDK.
 
-### TODO (Next Session)
-- [ ] Fix UI labels: "Android" → "Other" in Fleet Command portal
-- [ ] Delete test device NB000001 from Supabase
-- [ ] Review overnight data from JBNB0001/JBNB0002
+### TODO
 - [ ] Polish Fleet Command UI based on real data
+- [ ] Add remote command buttons to portal UI
+- [ ] Persistent interval change (NVS storage) for set_interval command
 
 ---
 
