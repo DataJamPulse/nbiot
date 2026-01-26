@@ -1,0 +1,30 @@
+# PlatformIO
+.pio/
+.pioenvs/
+.piolibdeps/
+
+# IDE
+.vscode/
+.idea/
+
+# Build artifacts
+*.o
+*.elf
+*.bin
+*.hex
+
+# Credentials and secrets - NEVER commit tokens
+credentials/
+credentials_*.txt
+*.credentials
+provisioning.log
+
+# Device config contains tokens - auto-generated
+src/device_config.h
+
+# Debug logs
+debug.log
+*.log
+
+# macOS
+.DS_Store
