@@ -1349,10 +1349,9 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
     <script>
-        // API hosted on datajamreports.com (Netlify functions)
-        const API_BASE = 'https://datajamreports.com/.netlify/functions/nbiot-api';
+        // Local Netlify function - isolated NB-IoT test environment
+        const API_BASE = '/.netlify/functions/nbiot-api';
 
-        // Simple auth headers for admin access
         function getAuthHeaders() {
             return { 'Content-Type': 'application/json' };
         }
