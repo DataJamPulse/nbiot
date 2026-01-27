@@ -23,24 +23,54 @@ Use these agents for specific tasks:
 
 ---
 
-## Current Status (2026-01-26)
+## Current Status (2026-01-27)
 
-**STATUS: FULL STACK OPERATIONAL** - Remote deployment active!
+**STATUS: FULL STACK OPERATIONAL** - v3.0 firmware deployed, dwell time & RSSI zones live!
 
 ### Active Devices
-| Device ID | Project | Location | Notes |
-|-----------|---------|----------|-------|
-| JBNB0001 | Data Jam | Dev Unit 1 | Local dev device |
-| JBNB0002 | Data Jam | Remote | Deployed 10 miles away, sending data ✓ |
+| Device ID | Firmware | Location | Status |
+|-----------|----------|----------|--------|
+| JBNB0001 | v2.8 | Dev Unit 1 | Online (local dev) |
+| JBNB0002 | **v3.0** | 26th & Wilshire, Santa Monica | **ACTIVE** - sending dwell time + RSSI zones |
 
-### NB-IoT Fleet Command Portal
+### Isolated Test Environment Architecture
+```
+JBNB Device (firmware v3.0)
+    ↓ HTTP over NB-IoT cellular (T-Mobile)
+Hologram
+    ↓
+Linode (172.233.144.32:5000) ← Flask backend stores in SQLite
+    ↓ sync_to_supabase.py (cron every 5 min)
+Supabase (NB-IoT project: xopbjawzrvsoeiapoawm)
+    ↑
+Netlify Functions (nbiot.netlify.app/.netlify/functions/nbiot-api)
+    ↑
+Dashboard (nbiot.netlify.app)
+```
+**Completely isolated from datajamreports.com** - this is the test environment.
+
+### NB-IoT Portal (Two-Page Structure)
 - **URL:** https://nbiot.netlify.app
 - **GitHub:** github.com/DataJamPulse/nbiot
-- **Features:** Device list, hourly charts, Apple/Other breakdown, device registration, remote commands
-- **API:** Netlify Functions → Supabase (reads) / Linode (device ops)
+- **API:** Local Netlify Functions → Supabase (reads) / Linode (device ops)
 
-### Remote Command System (v2.5)
-Devices can receive commands via heartbeat response:
+**Page 1: My Store Insights** (`index.html`)
+Shop owner view - simple language, no technical jargon:
+- Visitors Today (big number)
+- Busiest Hour
+- Foot Traffic chart (Today/Yesterday/Week tabs)
+- "Where Are They?" - proximity breakdown (At Counter, In Store, Window Shopping, Walking Past)
+- "How Long Do They Stay?" - engagement (Quick Glance, Browsing, Shopping, Loyal Customer)
+
+**Page 2: Out of Home** (`fleet.html`)
+Device management view:
+- Interactive map showing sensor locations
+- Fleet status (Online/Warning/Offline counts)
+- Sensor list with signal strength
+- Device detail modal with recent activity
+
+### Remote Command System (v3.0)
+Devices receive commands via both heartbeat AND reading responses:
 ```bash
 # Force send data now
 curl -X POST "http://172.233.144.32:5000/api/device/JBNB0002/command" \
@@ -49,11 +79,44 @@ curl -X POST "http://172.233.144.32:5000/api/device/JBNB0002/command" \
 
 # Reboot device
 curl -X POST "..." -d '{"command":"reboot"}'
-```
-Commands execute on next heartbeat (hourly) or data send (every 5 min).
 
-### Firmware Version: 2.9
-### Backend Version: 2.4
+# Trigger remote geolocation
+curl -X POST "..." -d '{"command":"geolocate"}'
+```
+Commands work on every 5-minute reading as well as daily heartbeat (v3.0 fix).
+
+### Firmware Version: 3.0
+### Backend Version: 2.5
+
+### Dwell Time Tracking (v3.0)
+Firmware tracks how long devices stay in range:
+| Bucket | Duration | Shop Owner Term |
+|--------|----------|-----------------|
+| `dwell_0_1` | Under 1 min | "Quick Glance" |
+| `dwell_1_5` | 1-5 min | "Browsing" |
+| `dwell_5_10` | 5-10 min | "Shopping" |
+| `dwell_10plus` | 10+ min | "Loyal Customer" |
+
+### RSSI Distance Zones (v3.0)
+Firmware categorizes probes by signal strength (proves viewability):
+| Zone | RSSI | Distance | Shop Owner Term |
+|------|------|----------|-----------------|
+| `rssi_immediate` | > -50 dBm | ~0-2m | "At Counter" |
+| `rssi_near` | -50 to -65 dBm | ~2-5m | "In Store" |
+| `rssi_far` | -65 to -80 dBm | ~5-15m | "Window Shopping" |
+| `rssi_remote` | < -80 dBm | >15m | "Walking Past" |
+
+**Note:** Distances are approximate. Actual range depends on phone transmit power and obstacles.
+
+### Device Activation Portal
+Zero-touch device setup for customers:
+- **URL:** `https://datajamreports.com/activate/JBNB0001`
+- QR code on device label links to status page
+- PIN-protected location naming (4-digit PIN from label)
+- Shows device status, signal strength, last seen
+
+### Watchdog Timer (v3.0)
+Device auto-reboots if stuck for 5 minutes (ESP32 task watchdog).
 
 ### WiFi Geolocation (v2.3+)
 Device auto-locates on every boot:
@@ -102,7 +165,7 @@ Firmware classifies devices as **Apple vs Other** (not Android specifically):
 | Hardware validation | ✓ Complete |
 | NB-IoT connectivity | ✓ T-Mobile Band 4 |
 | Linode server setup | ✓ Complete |
-| Flask backend v2.4 | ✓ Running with auth + geolocation + extended RSSI + heartbeat |
+| Flask backend v2.5 | ✓ Running with auth + geolocation + extended RSSI + heartbeat + device PIN |
 | Device authentication | ✓ Token-based |
 | NB-IoT → Backend data flow | ✓ **VERIFIED** - JBNB0001 sending |
 | Probe capture firmware | ✓ **COMPLETE** - Privacy filter + Apple/Other classification |
@@ -127,6 +190,18 @@ NB-IoT has built-in network-layer encryption. TLS handshakes are unreliable over
 - [ ] Polish Fleet Command UI based on real data
 - [ ] Add remote command buttons to portal UI
 - [ ] Persistent interval change (NVS storage) for set_interval command
+
+### Firmware v3.0 Changes (Ready to Flash)
+When JBNB0002 is recalled, flash v3.0 firmware which includes:
+
+| Change | Status | Description |
+|--------|--------|-------------|
+| **NTP-like time sync** | ✓ DONE | Syncs `g_bootTimestamp` from backend `server_time` in heartbeat response |
+| **Command parsing in readings** | ✓ DONE | Commands work in both heartbeat AND reading responses |
+| **Remote geolocate command** | ✓ DONE | `geolocate` command triggers fresh WiFi scan + location update |
+| **Watchdog timer** | ✓ DONE | 5-minute ESP32 watchdog for auto-recovery if device hangs |
+
+**To flash:** Connect device, run `./scripts/NBJBTOOL.sh`, option 1, enter device ID.
 
 ---
 
@@ -747,4 +822,4 @@ Integrating NB-IoT device management into DataJam Reports Portal.
 
 ---
 
-*Last Updated: 2026-01-26 (Firmware v2.9, Backend v2.4, NBJBTOOL.sh production-ready, Portal integration plan approved)*
+*Last Updated: 2026-01-26 (Firmware v3.0, Backend v2.5, NBJBTOOL.sh v2.0 with label generation, Device Activation Portal)*
