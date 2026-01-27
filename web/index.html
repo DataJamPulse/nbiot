@@ -3,43 +3,80 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NB-IoT Fleet Command | DataJam</title>
+    <title>Fleet Command | DataJam NB-IoT</title>
+
+    <!-- Fonts: Brand Toolkit compliant typography -->
+    <!-- Poppins for Subheadings (Medium 500) and Body (Light 300) -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+    <!-- Abeat Regular - Local (Brand Headlines Font) -->
+    <style>
+        @font-face {
+            font-family: 'Abeat';
+            src: url('fonts/abeat-regular.otf') format('opentype'),
+                 url('fonts/abeat-regular.ttf') format('truetype');
+            font-weight: 400;
+            font-style: normal;
+            font-display: swap;
+        }
+    </style>
+
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
     <style>
         :root {
-            --bg-void: #050508;
-            --bg-deep: #0a0a0f;
-            --bg-surface: #12121a;
-            --bg-elevated: #1a1a24;
-            --bg-hover: #22222e;
+            /* DataJam Brand Colors - EXACT */
+            --dj-black: #0A0C11;
+            --dj-white: #FEFAF9;
+            --dj-pink: #E62F6E;
+            --dj-orange: #E94B52;
+            --dj-glow: rgba(230, 47, 110, 0.4);
 
-            --text-bright: #ffffff;
-            --text-primary: #e4e4eb;
-            --text-secondary: #8888a0;
-            --text-muted: #555566;
+            /* Chart Colors */
+            --chart-purple: #5E2BFF;
+            --chart-teal: #15E0BC;
+            --chart-green: #78C534;
+            --chart-yellow: #EDBA06;
 
-            --accent-pink: #E62F6E;
-            --accent-coral: #E94B52;
-            --accent-glow: rgba(230, 47, 110, 0.4);
+            /* Dark palette derived from brand */
+            --bg-deep: #050608;
+            --bg-base: var(--dj-black);
+            --bg-surface: #12141A;
+            --bg-elevated: #1A1D24;
+            --bg-hover: #22262F;
 
-            --status-online: #00E5A0;
-            --status-online-glow: rgba(0, 229, 160, 0.3);
-            --status-warning: #FFB800;
-            --status-warning-glow: rgba(255, 184, 0, 0.3);
-            --status-offline: #FF4757;
-            --status-offline-glow: rgba(255, 71, 87, 0.3);
+            /* Text hierarchy */
+            --text-white: var(--dj-white);
+            --text-primary: #E8E6E4;
+            --text-secondary: #9A9896;
+            --text-muted: #5A5856;
 
-            --border-subtle: rgba(255, 255, 255, 0.06);
-            --border-accent: rgba(230, 47, 110, 0.3);
+            /* Status colors - using brand secondary */
+            --status-online: var(--chart-teal);
+            --status-online-dim: rgba(21, 224, 188, 0.12);
+            --status-warning: var(--chart-yellow);
+            --status-warning-dim: rgba(237, 186, 6, 0.12);
+            --status-offline: var(--dj-orange);
+            --status-offline-dim: rgba(233, 75, 82, 0.12);
 
-            --radius-sm: 6px;
+            /* Borders */
+            --border-subtle: rgba(254, 250, 249, 0.06);
+            --border-medium: rgba(254, 250, 249, 0.12);
+
+            /* Typography - Brand Toolkit Compliant */
+            --font-headline: 'Abeat', 'Poppins', sans-serif;  /* Headlines only (Abeat Regular) */
+            --font-subhead: 'Poppins', sans-serif;  /* Poppins Medium (500) for subheadings */
+            --font-body: 'Poppins', sans-serif;     /* Poppins Light (300) for body */
+            --font-display: 'Poppins', sans-serif;  /* Backwards compat */
+            --font-mono: 'JetBrains Mono', monospace;
+
+            /* Spacing & radius */
+            --radius-sm: 8px;
             --radius-md: 12px;
             --radius-lg: 20px;
-
-            --font-display: 'Outfit', sans-serif;
-            --font-mono: 'JetBrains Mono', monospace;
         }
 
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -51,64 +88,42 @@
         }
 
         body {
-            font-family: var(--font-display);
-            background: var(--bg-void);
+            font-family: var(--font-body);
+            font-weight: 300;  /* Poppins Light for body text */
+            background: var(--bg-deep);
             color: var(--text-primary);
             min-height: 100vh;
             overflow-x: hidden;
         }
 
-        /* Atmospheric background */
+        /* Atmospheric gradient */
         body::before {
             content: '';
             position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
+            inset: 0;
             background:
-                radial-gradient(ellipse 80% 50% at 50% -20%, rgba(230, 47, 110, 0.15), transparent),
-                radial-gradient(ellipse 60% 40% at 100% 0%, rgba(233, 75, 82, 0.1), transparent),
-                radial-gradient(ellipse 50% 30% at 0% 100%, rgba(230, 47, 110, 0.08), transparent);
+                radial-gradient(ellipse 80% 60% at 10% 0%, rgba(230, 47, 110, 0.08) 0%, transparent 50%),
+                radial-gradient(ellipse 60% 40% at 90% 100%, rgba(233, 75, 82, 0.06) 0%, transparent 50%);
             pointer-events: none;
             z-index: 0;
         }
 
-        /* Scan line effect */
-        body::after {
-            content: '';
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: repeating-linear-gradient(
-                0deg,
-                transparent,
-                transparent 2px,
-                rgba(0, 0, 0, 0.03) 2px,
-                rgba(0, 0, 0, 0.03) 4px
-            );
-            pointer-events: none;
-            z-index: 1;
-        }
-
         .app {
             position: relative;
-            z-index: 2;
+            z-index: 1;
             min-height: 100vh;
-            display: flex;
-            flex-direction: column;
+            display: grid;
+            grid-template-rows: auto 1fr;
         }
 
-        /* Header */
+        /* ==================== HEADER ==================== */
         .header {
-            padding: 24px 32px;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            padding: 16px 24px;
             border-bottom: 1px solid var(--border-subtle);
-            background: linear-gradient(180deg, rgba(10, 10, 15, 0.9) 0%, transparent 100%);
+            background: rgba(10, 12, 17, 0.95);
             backdrop-filter: blur(20px);
             position: sticky;
             top: 0;
@@ -118,395 +133,700 @@
         .brand {
             display: flex;
             align-items: center;
-            gap: 16px;
+            gap: 14px;
         }
 
-        .brand-icon {
-            width: 48px;
-            height: 48px;
-            background: linear-gradient(135deg, var(--accent-pink), var(--accent-coral));
-            border-radius: var(--radius-md);
+        .brand-logo {
+            width: 42px;
+            height: 42px;
+            background: linear-gradient(135deg, var(--dj-pink) 0%, var(--dj-orange) 100%);
+            border-radius: var(--radius-sm);
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 20px;
-            box-shadow: 0 0 30px var(--accent-glow);
-            animation: pulse-glow 3s ease-in-out infinite;
+            box-shadow: 0 0 20px var(--dj-glow);
+            animation: logo-glow 3s ease-in-out infinite;
         }
 
-        @keyframes pulse-glow {
-            0%, 100% { box-shadow: 0 0 20px var(--accent-glow); }
-            50% { box-shadow: 0 0 40px var(--accent-glow), 0 0 60px rgba(230, 47, 110, 0.2); }
+        @keyframes logo-glow {
+            0%, 100% { box-shadow: 0 0 20px var(--dj-glow); }
+            50% { box-shadow: 0 0 30px var(--dj-glow), 0 0 50px rgba(230, 47, 110, 0.2); }
+        }
+
+        .brand-logo svg {
+            width: 24px;
+            height: 24px;
         }
 
         .brand-text h1 {
-            font-size: 20px;
-            font-weight: 600;
-            letter-spacing: -0.02em;
-            color: var(--text-bright);
+            font-family: var(--font-headline);
+            font-size: 22px;
+            font-weight: 400;
+            letter-spacing: 0.02em;  /* Brand toolkit: +10pt tracking for headlines */
+            color: var(--text-white);
         }
 
-        .brand-text span {
-            font-size: 12px;
-            color: var(--text-muted);
+        .brand-text h1 span {
+            background: linear-gradient(90deg, var(--dj-pink), var(--dj-orange));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .brand-text .subtitle {
+            font-family: var(--font-subhead);
+            font-size: 10px;
+            font-weight: 500;  /* Poppins Medium */
             text-transform: uppercase;
-            letter-spacing: 0.1em;
+            letter-spacing: 0.08em;  /* Brand toolkit: +5pt tracking for subheads */
+            color: var(--text-muted);
+            margin-top: 2px;
         }
 
         .header-actions {
             display: flex;
-            gap: 12px;
+            gap: 8px;
         }
 
-        /* Buttons */
+        /* ==================== BUTTONS ==================== */
         .btn {
             font-family: var(--font-display);
-            font-size: 14px;
-            font-weight: 500;
-            padding: 12px 24px;
+            font-size: 12px;
+            font-weight: 600;
+            padding: 10px 18px;
             border-radius: var(--radius-md);
             border: none;
             cursor: pointer;
             transition: all 0.2s ease;
             display: inline-flex;
             align-items: center;
-            gap: 8px;
+            gap: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
         }
 
         .btn-primary {
-            background: linear-gradient(135deg, var(--accent-pink), var(--accent-coral));
+            background: linear-gradient(135deg, var(--dj-pink) 0%, var(--dj-orange) 100%);
             color: white;
-            box-shadow: 0 4px 20px var(--accent-glow);
+            box-shadow: 0 4px 20px var(--dj-glow);
         }
 
         .btn-primary:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 30px var(--accent-glow);
+            transform: translateY(-1px);
+            box-shadow: 0 6px 28px var(--dj-glow);
         }
 
         .btn-ghost {
             background: var(--bg-surface);
             color: var(--text-secondary);
-            border: 1px solid var(--border-subtle);
+            border: 1px solid var(--border-medium);
         }
 
         .btn-ghost:hover {
             background: var(--bg-elevated);
             color: var(--text-primary);
-            border-color: var(--border-accent);
+            border-color: var(--dj-pink);
         }
 
         .btn-icon {
-            width: 44px;
-            height: 44px;
+            width: 40px;
+            height: 40px;
             padding: 0;
+            justify-content: center;
+            font-size: 16px;
+        }
+
+        .btn-sm {
+            padding: 8px 14px;
+            font-size: 11px;
+        }
+
+        /* ==================== MAIN LAYOUT ==================== */
+        .main {
+            display: grid;
+            grid-template-columns: 1fr 420px;
+            gap: 0;
+            height: calc(100vh - 75px);
+        }
+
+        /* ==================== MAP SECTION ==================== */
+        .map-section {
+            position: relative;
+            background: var(--bg-base);
+        }
+
+        #map {
+            width: 100%;
+            height: 100%;
+        }
+
+        .leaflet-container {
+            background: var(--bg-base);
+            font-family: var(--font-display);
+        }
+
+        .leaflet-control-zoom {
+            border: none !important;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.3) !important;
+        }
+
+        .leaflet-control-zoom a {
+            background: var(--bg-surface) !important;
+            color: var(--text-primary) !important;
+            border: 1px solid var(--border-subtle) !important;
+            width: 34px !important;
+            height: 34px !important;
+            line-height: 34px !important;
+        }
+
+        .leaflet-control-zoom a:hover {
+            background: var(--bg-elevated) !important;
+        }
+
+        .leaflet-control-zoom-in { border-radius: 8px 8px 0 0 !important; }
+        .leaflet-control-zoom-out { border-radius: 0 0 8px 8px !important; }
+
+        /* Custom map markers */
+        .device-marker {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 18px;
+            font-family: var(--font-mono);
+            font-size: 10px;
+            font-weight: 600;
+            color: var(--dj-black);
+            cursor: pointer;
+            transition: transform 0.2s ease;
+            position: relative;
         }
 
-        /* Main content */
-        .main {
-            flex: 1;
-            padding: 32px;
-            max-width: 1440px;
-            margin: 0 auto;
-            width: 100%;
+        .device-marker::before {
+            content: '';
+            position: absolute;
+            inset: -3px;
+            border-radius: 50%;
+            border: 2px solid currentColor;
+            opacity: 0.4;
+            animation: marker-ping 2s ease-out infinite;
         }
 
-        /* Stats Row */
-        .stats-row {
+        .device-marker.online {
+            background: var(--status-online);
+            box-shadow: 0 0 16px rgba(21, 224, 188, 0.5);
+        }
+
+        .device-marker.warning {
+            background: var(--status-warning);
+            box-shadow: 0 0 16px rgba(237, 186, 6, 0.5);
+        }
+
+        .device-marker.offline {
+            background: var(--status-offline);
+            color: white;
+            box-shadow: 0 0 16px rgba(233, 75, 82, 0.5);
+        }
+
+        @keyframes marker-ping {
+            0% { transform: scale(1); opacity: 0.4; }
+            100% { transform: scale(1.6); opacity: 0; }
+        }
+
+        .device-marker:hover {
+            transform: scale(1.2);
+            z-index: 1000 !important;
+        }
+
+        /* Map overlay stats */
+        .map-overlay {
+            position: absolute;
+            top: 16px;
+            left: 16px;
+            z-index: 1000;
+            display: flex;
+            gap: 8px;
+        }
+
+        .map-stat {
+            background: rgba(10, 12, 17, 0.92);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-md);
+            padding: 12px 16px;
+            min-width: 90px;
+        }
+
+        .map-stat-label {
+            font-size: 9px;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+            font-weight: 500;
+        }
+
+        .map-stat-value {
+            font-family: var(--font-mono);
+            font-size: 22px;
+            font-weight: 600;
+            color: var(--text-white);
+        }
+
+        .map-stat.online .map-stat-value { color: var(--status-online); }
+        .map-stat.warning .map-stat-value { color: var(--status-warning); }
+        .map-stat.offline .map-stat-value { color: var(--status-offline); }
+
+        /* Map legend */
+        .map-legend {
+            position: absolute;
+            bottom: 16px;
+            left: 16px;
+            z-index: 1000;
+            background: rgba(10, 12, 17, 0.92);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-md);
+            padding: 12px 16px;
             display: flex;
             gap: 16px;
-            margin-bottom: 32px;
-            flex-wrap: wrap;
         }
 
-        .stat-card {
-            background: var(--bg-surface);
-            border: 1px solid var(--border-subtle);
-            border-radius: var(--radius-lg);
-            padding: 24px;
-            min-width: 180px;
-            flex: 1;
-            position: relative;
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 10px;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+
+        .legend-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+
+        .legend-dot.online { background: var(--status-online); box-shadow: 0 0 6px var(--status-online); }
+        .legend-dot.warning { background: var(--status-warning); box-shadow: 0 0 6px var(--status-warning); }
+        .legend-dot.offline { background: var(--status-offline); box-shadow: 0 0 6px var(--status-offline); }
+
+        /* ==================== SIDEBAR ==================== */
+        .sidebar {
+            background: var(--bg-base);
+            border-left: 1px solid var(--border-subtle);
+            display: flex;
+            flex-direction: column;
             overflow: hidden;
         }
 
-        .stat-card::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            height: 3px;
-            background: linear-gradient(90deg, var(--accent-pink), var(--accent-coral));
-            opacity: 0;
-            transition: opacity 0.3s ease;
-        }
-
-        .stat-card:hover::before {
-            opacity: 1;
-        }
-
-        .stat-label {
-            font-size: 12px;
-            text-transform: uppercase;
-            letter-spacing: 0.08em;
-            color: var(--text-muted);
-            margin-bottom: 8px;
-        }
-
-        .stat-value {
-            font-size: 36px;
-            font-weight: 700;
-            letter-spacing: -0.02em;
-            color: var(--text-bright);
-        }
-
-        .stat-card.online .stat-value { color: var(--status-online); }
-        .stat-card.warning .stat-value { color: var(--status-warning); }
-        .stat-card.offline .stat-value { color: var(--status-offline); }
-
-        .stat-card.online { box-shadow: inset 0 0 60px -30px var(--status-online-glow); }
-        .stat-card.warning { box-shadow: inset 0 0 60px -30px var(--status-warning-glow); }
-        .stat-card.offline { box-shadow: inset 0 0 60px -30px var(--status-offline-glow); }
-
-        /* Section header */
-        .section-header {
+        .sidebar-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border-subtle);
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 20px;
+        }
+
+        .sidebar-title {
+            font-family: var(--font-subhead);
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;  /* Brand toolkit: +5pt tracking */
+            color: var(--text-muted);
+            font-weight: 500;  /* Poppins Medium */
+        }
+
+        .device-count {
+            font-family: var(--font-mono);
+            font-size: 11px;
+            color: var(--text-secondary);
+            background: var(--bg-surface);
+            padding: 4px 10px;
+            border-radius: 16px;
+        }
+
+        /* Today's metrics */
+        .metrics-panel {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+        }
+
+        .metric-card {
+            background: var(--bg-surface);
+            border-radius: var(--radius-md);
+            padding: 14px;
+            position: relative;
+            overflow: hidden;
+            border: 1px solid var(--border-subtle);
+            transition: border-color 0.2s ease;
+        }
+
+        .metric-card:hover {
+            border-color: var(--dj-pink);
+        }
+
+        .metric-icon {
+            font-size: 14px;
+            margin-bottom: 6px;
+        }
+
+        .metric-value {
+            font-family: var(--font-mono);
+            font-size: 20px;
+            font-weight: 600;
+            color: var(--text-white);
+            margin-bottom: 2px;
+        }
+
+        .metric-label {
+            font-size: 9px;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: var(--text-muted);
+            font-weight: 500;
+        }
+
+        /* ==================== ANALYTICS PANELS ==================== */
+        .analytics-section {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border-subtle);
         }
 
         .section-title {
-            font-size: 13px;
+            font-family: var(--font-subhead);
+            font-size: 10px;
             text-transform: uppercase;
-            letter-spacing: 0.12em;
+            letter-spacing: 0.08em;  /* Brand toolkit: +5pt tracking */
             color: var(--text-muted);
+            font-weight: 500;  /* Poppins Medium */
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
 
-        /* Device Grid */
-        .devices-grid {
+        .section-title::before {
+            content: '';
+            width: 3px;
+            height: 12px;
+            background: linear-gradient(180deg, var(--dj-pink), var(--dj-orange));
+            border-radius: 2px;
+        }
+
+        /* Dwell Time Visualization */
+        .dwell-chart {
+            display: flex;
+            gap: 6px;
+            align-items: flex-end;
+            height: 80px;
+            padding: 8px 0;
+        }
+
+        .dwell-bar {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .dwell-bar-fill {
+            width: 100%;
+            border-radius: 4px 4px 0 0;
+            min-height: 4px;
+            transition: height 0.5s ease;
+        }
+
+        .dwell-bar[data-type="driveby"] .dwell-bar-fill { background: var(--chart-purple); }
+        .dwell-bar[data-type="brief"] .dwell-bar-fill { background: var(--chart-teal); }
+        .dwell-bar[data-type="engaged"] .dwell-bar-fill { background: var(--chart-green); }
+        .dwell-bar[data-type="loyal"] .dwell-bar-fill { background: var(--chart-yellow); }
+
+        .dwell-bar-label {
+            font-size: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+            text-align: center;
+            font-weight: 500;
+        }
+
+        .dwell-bar-value {
+            font-family: var(--font-mono);
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        /* RSSI Zone Visualization - Radar style */
+        .rssi-radar {
+            position: relative;
+            width: 160px;
+            height: 80px;
+            margin: 0 auto;
+        }
+
+        .rssi-ring {
+            position: absolute;
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            border-radius: 100px 100px 0 0;
+            border: 2px solid;
+            border-bottom: none;
+            opacity: 0.3;
+            transition: opacity 0.3s ease;
+        }
+
+        .rssi-ring.active { opacity: 1; }
+
+        .rssi-ring.immediate {
+            width: 40px;
+            height: 20px;
+            border-color: var(--chart-yellow);
+            background: rgba(237, 186, 6, 0.15);
+        }
+
+        .rssi-ring.near {
+            width: 80px;
+            height: 40px;
+            border-color: var(--chart-green);
+            background: rgba(120, 197, 52, 0.1);
+        }
+
+        .rssi-ring.far {
+            width: 120px;
+            height: 60px;
+            border-color: var(--chart-teal);
+            background: rgba(21, 224, 188, 0.08);
+        }
+
+        .rssi-ring.remote {
+            width: 160px;
+            height: 80px;
+            border-color: var(--chart-purple);
+            background: rgba(94, 43, 255, 0.05);
+        }
+
+        .rssi-device {
+            position: absolute;
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 10px;
+            height: 10px;
+            background: linear-gradient(135deg, var(--dj-pink), var(--dj-orange));
+            border-radius: 50%;
+            box-shadow: 0 0 12px var(--dj-glow);
+        }
+
+        .rssi-legend {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-            gap: 20px;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 8px;
+            margin-top: 12px;
+        }
+
+        .rssi-legend-item {
+            text-align: center;
+        }
+
+        .rssi-legend-value {
+            font-family: var(--font-mono);
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-white);
+        }
+
+        .rssi-legend-label {
+            font-size: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+
+        .rssi-legend-item[data-zone="immediate"] .rssi-legend-value { color: var(--chart-yellow); }
+        .rssi-legend-item[data-zone="near"] .rssi-legend-value { color: var(--chart-green); }
+        .rssi-legend-item[data-zone="far"] .rssi-legend-value { color: var(--chart-teal); }
+        .rssi-legend-item[data-zone="remote"] .rssi-legend-value { color: var(--chart-purple); }
+
+        /* Device list */
+        .device-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px;
         }
 
         .device-card {
             background: var(--bg-surface);
             border: 1px solid var(--border-subtle);
-            border-radius: var(--radius-lg);
-            padding: 24px;
+            border-radius: var(--radius-md);
+            padding: 14px;
+            margin-bottom: 8px;
             cursor: pointer;
-            transition: all 0.3s ease;
-            position: relative;
-            overflow: hidden;
-        }
-
-        .device-card::after {
-            content: '';
-            position: absolute;
-            inset: 0;
-            border-radius: var(--radius-lg);
-            padding: 1px;
-            background: linear-gradient(135deg, transparent 40%, var(--accent-pink) 100%);
-            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-            mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-            -webkit-mask-composite: xor;
-            mask-composite: exclude;
-            opacity: 0;
-            transition: opacity 0.3s ease;
+            transition: all 0.2s ease;
         }
 
         .device-card:hover {
-            transform: translateY(-4px);
             background: var(--bg-elevated);
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+            border-color: var(--dj-pink);
+            transform: translateX(-3px);
         }
 
-        .device-card:hover::after {
-            opacity: 1;
-        }
-
-        .device-header {
+        .device-card-header {
             display: flex;
             justify-content: space-between;
             align-items: flex-start;
-            margin-bottom: 20px;
+            margin-bottom: 10px;
         }
 
         .device-id {
             font-family: var(--font-mono);
-            font-size: 18px;
-            font-weight: 500;
-            color: var(--text-bright);
-            letter-spacing: 0.02em;
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-white);
         }
 
-        .device-project {
-            font-size: 13px;
+        .device-location {
+            font-size: 11px;
             color: var(--text-secondary);
-            margin-top: 4px;
+            margin-top: 2px;
         }
 
-        /* Status indicator */
-        .status-indicator {
+        .status-badge {
             display: flex;
             align-items: center;
-            gap: 8px;
-            padding: 6px 14px;
-            border-radius: 100px;
-            font-size: 12px;
+            gap: 5px;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 9px;
             font-weight: 600;
             text-transform: uppercase;
-            letter-spacing: 0.05em;
+            letter-spacing: 0.04em;
         }
 
-        .status-indicator::before {
+        .status-badge::before {
             content: '';
-            width: 8px;
-            height: 8px;
+            width: 5px;
+            height: 5px;
             border-radius: 50%;
-            animation: status-pulse 2s ease-in-out infinite;
         }
 
-        .status-indicator.online {
-            background: rgba(0, 229, 160, 0.1);
+        .status-badge.online {
+            background: var(--status-online-dim);
             color: var(--status-online);
         }
-        .status-indicator.online::before {
+        .status-badge.online::before {
             background: var(--status-online);
-            box-shadow: 0 0 10px var(--status-online);
+            box-shadow: 0 0 4px var(--status-online);
+            animation: pulse-dot 2s ease-in-out infinite;
         }
 
-        .status-indicator.warning {
-            background: rgba(255, 184, 0, 0.1);
+        .status-badge.warning {
+            background: var(--status-warning-dim);
             color: var(--status-warning);
         }
-        .status-indicator.warning::before {
+        .status-badge.warning::before {
             background: var(--status-warning);
-            box-shadow: 0 0 10px var(--status-warning);
-            animation: status-pulse-warning 1s ease-in-out infinite;
+            animation: pulse-dot 1s ease-in-out infinite;
         }
 
-        .status-indicator.offline {
-            background: rgba(255, 71, 87, 0.1);
+        .status-badge.offline {
+            background: var(--status-offline-dim);
             color: var(--status-offline);
         }
-        .status-indicator.offline::before {
+        .status-badge.offline::before {
             background: var(--status-offline);
-            box-shadow: 0 0 10px var(--status-offline);
-            animation: none;
         }
 
-        .status-indicator.unknown {
-            background: var(--bg-elevated);
-            color: var(--text-muted);
-        }
-        .status-indicator.unknown::before {
-            background: var(--text-muted);
-        }
-
-        @keyframes status-pulse {
-            0%, 100% { opacity: 1; transform: scale(1); }
-            50% { opacity: 0.6; transform: scale(1.2); }
-        }
-
-        @keyframes status-pulse-warning {
+        @keyframes pulse-dot {
             0%, 100% { opacity: 1; }
             50% { opacity: 0.4; }
         }
 
-        /* Device metrics */
-        .device-metrics {
+        .device-metrics-row {
             display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 12px;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 6px;
         }
 
-        .metric {
-            background: var(--bg-deep);
+        .device-metric {
+            text-align: center;
+            padding: 6px;
+            background: var(--bg-base);
             border-radius: var(--radius-sm);
-            padding: 12px;
         }
 
-        .metric-label {
-            font-size: 10px;
-            text-transform: uppercase;
-            letter-spacing: 0.1em;
-            color: var(--text-muted);
-            margin-bottom: 4px;
-        }
-
-        .metric-value {
+        .device-metric-value {
             font-family: var(--font-mono);
-            font-size: 14px;
+            font-size: 11px;
+            font-weight: 500;
             color: var(--text-primary);
         }
 
-        /* Loading & Error states */
+        .device-metric-label {
+            font-size: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+
+        /* Loading & Empty states */
         .loading-state {
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            padding: 80px 40px;
+            padding: 48px 20px;
             color: var(--text-muted);
-            grid-column: 1 / -1;
         }
 
         .loading-spinner {
-            width: 48px;
-            height: 48px;
+            width: 32px;
+            height: 32px;
             border: 3px solid var(--bg-elevated);
-            border-top-color: var(--accent-pink);
+            border-top-color: var(--dj-pink);
             border-radius: 50%;
             animation: spin 1s linear infinite;
-            margin-bottom: 16px;
+            margin-bottom: 12px;
         }
 
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-
-        .error-state {
-            background: rgba(255, 71, 87, 0.1);
-            border: 1px solid rgba(255, 71, 87, 0.2);
-            border-radius: var(--radius-lg);
-            padding: 40px;
-            text-align: center;
-            color: var(--status-offline);
-            grid-column: 1 / -1;
-        }
+        @keyframes spin { to { transform: rotate(360deg); } }
 
         .empty-state {
-            grid-column: 1 / -1;
             text-align: center;
-            padding: 80px 40px;
+            padding: 48px 20px;
             color: var(--text-muted);
         }
 
         .empty-state-icon {
-            font-size: 48px;
-            margin-bottom: 16px;
+            font-size: 36px;
+            margin-bottom: 10px;
             opacity: 0.5;
         }
 
-        /* Modal */
+        /* ==================== MODAL ==================== */
         .modal-overlay {
             position: fixed;
             inset: 0;
-            background: rgba(5, 5, 8, 0.9);
+            background: rgba(5, 6, 8, 0.95);
             backdrop-filter: blur(8px);
             display: flex;
             align-items: center;
             justify-content: center;
-            z-index: 1000;
-            padding: 24px;
-            animation: fade-in 0.2s ease;
+            z-index: 2000;
+            padding: 20px;
+            animation: fade-in 0.15s ease;
         }
 
         @keyframes fade-in {
@@ -522,30 +842,55 @@
             max-width: 520px;
             max-height: 90vh;
             overflow-y: auto;
-            animation: modal-in 0.3s ease;
-            position: relative;
+            animation: modal-in 0.2s ease;
+        }
+
+        .modal.large {
+            max-width: 680px;
         }
 
         @keyframes modal-in {
-            from { opacity: 0; transform: scale(0.95) translateY(10px); }
+            from { opacity: 0; transform: scale(0.96) translateY(8px); }
             to { opacity: 1; transform: scale(1) translateY(0); }
         }
 
         .modal-header {
-            padding: 24px 24px 0;
+            padding: 20px 20px 0;
             display: flex;
             justify-content: space-between;
             align-items: flex-start;
         }
 
+        .modal-title {
+            font-family: var(--font-headline);
+            font-size: 22px;
+            font-weight: 400;
+            letter-spacing: 0.02em;  /* Brand toolkit: +10pt tracking */
+            color: var(--text-white);
+        }
+
+        .modal-title.device-id {
+            font-family: var(--font-mono);  /* Override for device IDs */
+            font-weight: 600;
+            letter-spacing: normal;
+        }
+
+        .modal-subtitle {
+            font-family: var(--font-body);
+            font-size: 12px;
+            font-weight: 300;  /* Poppins Light */
+            color: var(--text-secondary);
+            margin-top: 4px;
+        }
+
         .modal-close {
-            width: 36px;
-            height: 36px;
+            width: 32px;
+            height: 32px;
             border-radius: var(--radius-sm);
             background: var(--bg-elevated);
             border: none;
             color: var(--text-muted);
-            font-size: 20px;
+            font-size: 18px;
             cursor: pointer;
             display: flex;
             align-items: center;
@@ -559,42 +904,30 @@
         }
 
         .modal-body {
-            padding: 24px;
-        }
-
-        .modal-title {
-            font-family: var(--font-mono);
-            font-size: 24px;
-            font-weight: 600;
-            color: var(--text-bright);
-            margin-bottom: 4px;
-        }
-
-        .modal-subtitle {
-            font-size: 14px;
-            color: var(--text-secondary);
+            padding: 20px;
         }
 
         /* Form styles */
         .form-group {
-            margin-bottom: 20px;
+            margin-bottom: 16px;
         }
 
         .form-label {
             display: block;
-            font-size: 12px;
+            font-size: 10px;
             text-transform: uppercase;
-            letter-spacing: 0.08em;
+            letter-spacing: 0.06em;
             color: var(--text-muted);
-            margin-bottom: 8px;
+            margin-bottom: 6px;
+            font-weight: 600;
         }
 
         .form-input {
             width: 100%;
-            padding: 14px 16px;
+            padding: 12px 14px;
             font-family: var(--font-display);
-            font-size: 15px;
-            background: var(--bg-deep);
+            font-size: 14px;
+            background: var(--bg-base);
             border: 1px solid var(--border-subtle);
             border-radius: var(--radius-md);
             color: var(--text-primary);
@@ -603,475 +936,243 @@
 
         .form-input:focus {
             outline: none;
-            border-color: var(--accent-pink);
-            box-shadow: 0 0 0 3px var(--accent-glow);
+            border-color: var(--dj-pink);
+            box-shadow: 0 0 0 3px var(--dj-glow);
         }
 
         .form-input::placeholder {
             color: var(--text-muted);
         }
 
-        .form-hint {
-            font-size: 12px;
-            color: var(--text-muted);
-            margin-top: 6px;
-        }
-
         .form-input.mono {
             font-family: var(--font-mono);
-            font-size: 16px;
-            letter-spacing: 0.05em;
+            letter-spacing: 0.03em;
+        }
+
+        .form-hint {
+            font-size: 10px;
+            color: var(--text-muted);
+            margin-top: 4px;
         }
 
         /* Token display */
         .token-container {
-            background: var(--bg-deep);
+            background: var(--bg-base);
             border: 1px solid var(--status-online);
             border-radius: var(--radius-md);
-            padding: 20px;
-            margin: 20px 0;
+            padding: 16px;
+            margin: 16px 0;
         }
 
         .token-label {
-            font-size: 11px;
+            font-size: 9px;
             text-transform: uppercase;
-            letter-spacing: 0.1em;
+            letter-spacing: 0.08em;
             color: var(--status-online);
-            margin-bottom: 12px;
-            display: flex;
-            align-items: center;
-            gap: 6px;
+            margin-bottom: 10px;
+            font-weight: 600;
         }
 
         .token-value {
             font-family: var(--font-mono);
-            font-size: 13px;
+            font-size: 11px;
             color: var(--text-primary);
             word-break: break-all;
-            line-height: 1.6;
+            line-height: 1.5;
             background: var(--bg-surface);
-            padding: 12px;
+            padding: 10px;
             border-radius: var(--radius-sm);
         }
 
         .token-warning {
             display: flex;
             align-items: flex-start;
-            gap: 10px;
-            padding: 14px;
-            background: rgba(255, 184, 0, 0.1);
-            border: 1px solid rgba(255, 184, 0, 0.2);
+            gap: 8px;
+            padding: 12px;
+            background: var(--status-warning-dim);
             border-radius: var(--radius-md);
-            margin-top: 16px;
-            font-size: 13px;
+            margin-top: 12px;
+            font-size: 11px;
             color: var(--status-warning);
         }
 
-        /* Detail view stats grid */
-        .detail-stats {
+        /* Detail view */
+        .detail-grid {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
-            gap: 12px;
-            margin: 24px 0;
+            gap: 10px;
+            margin: 16px 0;
         }
 
         .detail-stat {
-            background: var(--bg-deep);
+            background: var(--bg-base);
             border-radius: var(--radius-md);
-            padding: 16px;
+            padding: 14px;
         }
 
         .detail-stat-label {
-            font-size: 11px;
+            font-size: 9px;
             text-transform: uppercase;
-            letter-spacing: 0.08em;
+            letter-spacing: 0.06em;
             color: var(--text-muted);
-            margin-bottom: 6px;
+            margin-bottom: 4px;
+            font-weight: 500;
         }
 
         .detail-stat-value {
             font-family: var(--font-mono);
-            font-size: 16px;
-            color: var(--text-bright);
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--text-white);
         }
 
         /* Readings table */
         .readings-section {
-            margin-top: 24px;
+            margin-top: 20px;
         }
 
         .readings-title {
-            font-size: 12px;
+            font-size: 10px;
             text-transform: uppercase;
-            letter-spacing: 0.1em;
+            letter-spacing: 0.08em;
             color: var(--text-muted);
-            margin-bottom: 12px;
+            margin-bottom: 10px;
+            font-weight: 600;
+        }
+
+        .readings-table-wrapper {
+            max-height: 200px;
+            overflow-y: auto;
+            background: var(--bg-base);
+            border-radius: var(--radius-md);
         }
 
         .readings-table {
             width: 100%;
             border-collapse: collapse;
-            font-size: 13px;
+            font-size: 11px;
         }
 
         .readings-table th {
             text-align: left;
-            padding: 10px 12px;
-            font-size: 10px;
+            padding: 8px 10px;
+            font-size: 8px;
             text-transform: uppercase;
-            letter-spacing: 0.08em;
+            letter-spacing: 0.06em;
             color: var(--text-muted);
-            font-weight: 500;
+            font-weight: 600;
             border-bottom: 1px solid var(--border-subtle);
-        }
-
-        .readings-table th:not(:first-child) {
-            text-align: right;
+            position: sticky;
+            top: 0;
+            background: var(--bg-base);
         }
 
         .readings-table td {
-            padding: 12px;
+            padding: 8px 10px;
             border-bottom: 1px solid var(--border-subtle);
             font-family: var(--font-mono);
             color: var(--text-secondary);
         }
 
-        .readings-table td:not(:first-child) {
-            text-align: right;
-            color: var(--text-primary);
-        }
-
-        /* Device type badges */
-        .device-type-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-            padding: 2px 8px;
-            border-radius: 4px;
-            font-size: 11px;
-            font-weight: 500;
-        }
-        .badge-apple {
-            background: rgba(147, 147, 147, 0.2);
-            color: #aaa;
-        }
-        .badge-other {
-            background: rgba(61, 220, 132, 0.15);
-            color: #3DDC84;
-        }
-
-        /* Hourly chart */
-        .chart-section {
-            margin-top: 32px;
-            background: var(--bg-surface);
-            border: 1px solid var(--border-subtle);
-            border-radius: var(--radius-lg);
-            padding: 24px;
-        }
-
-        .chart-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-        }
-
-        .chart-title {
-            font-size: 13px;
-            text-transform: uppercase;
-            letter-spacing: 0.12em;
-            color: var(--text-muted);
-        }
-
-        .chart-filters {
-            display: flex;
-            gap: 8px;
-        }
-
-        .chart-filter-btn {
-            padding: 6px 14px;
-            border-radius: 6px;
-            border: 1px solid var(--border-subtle);
-            background: var(--bg-deep);
-            color: var(--text-muted);
-            font-family: var(--font-display);
-            font-size: 12px;
-            cursor: pointer;
-            transition: all 0.2s ease;
-        }
-
-        .chart-filter-btn:hover {
-            border-color: var(--border-accent);
-            color: var(--text-secondary);
-        }
-
-        .chart-filter-btn.active {
-            background: var(--accent-pink);
-            border-color: var(--accent-pink);
-            color: white;
-        }
-
-        .chart-container {
-            height: 200px;
-            display: flex;
-            align-items: flex-end;
-            gap: 2px;
-            padding: 10px 0;
-        }
-
-        .chart-bar-group {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 4px;
-            min-width: 0;
-        }
-
-        .chart-bar {
-            width: 100%;
-            max-width: 40px;
-            border-radius: 3px 3px 0 0;
-            transition: all 0.3s ease;
-            position: relative;
-        }
-
-        .chart-bar.impressions {
-            background: linear-gradient(180deg, var(--accent-pink), var(--accent-coral));
-        }
-
-        .chart-bar.unique {
-            background: var(--status-online);
-        }
-
-        .chart-bar:hover {
-            filter: brightness(1.2);
-        }
-
-        .chart-label {
-            font-size: 9px;
-            color: var(--text-muted);
-            writing-mode: vertical-rl;
-            transform: rotate(180deg);
-            max-height: 60px;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-
-        .chart-legend {
-            display: flex;
-            justify-content: center;
-            gap: 24px;
-            margin-top: 16px;
-            padding-top: 16px;
-            border-top: 1px solid var(--border-subtle);
-        }
-
-        .legend-item-chart {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-size: 12px;
-            color: var(--text-secondary);
-        }
-
-        .legend-color {
-            width: 12px;
-            height: 12px;
-            border-radius: 3px;
-        }
-
-        .legend-color.impressions {
-            background: linear-gradient(135deg, var(--accent-pink), var(--accent-coral));
-        }
-
-        .legend-color.unique { background: var(--status-online); }
-        .legend-color.apple { background: #888; }
-        .legend-color.other { background: #3DDC84; }
-
-        /* Today's metrics row */
-        .metrics-breakdown {
-            display: flex;
-            gap: 16px;
-            margin-top: 16px;
-            flex-wrap: wrap;
-        }
-
-        .metric-breakdown-card {
-            flex: 1;
-            min-width: 140px;
-            background: var(--bg-deep);
-            border-radius: var(--radius-md);
-            padding: 16px;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-
-        .metric-icon {
-            width: 40px;
-            height: 40px;
-            border-radius: var(--radius-sm);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 18px;
-        }
-
-        .metric-icon.apple { background: rgba(147, 147, 147, 0.2); }
-        .metric-icon.other { background: rgba(61, 220, 132, 0.15); }
-        .metric-icon.signal { background: rgba(230, 47, 110, 0.15); }
-        .metric-icon.impressions { background: rgba(233, 75, 82, 0.15); }
-
-        .metric-data {
-            flex: 1;
-        }
-
-        .metric-data-label {
-            font-size: 11px;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            color: var(--text-muted);
-        }
-
-        .metric-data-value {
-            font-family: var(--font-mono);
-            font-size: 20px;
-            font-weight: 600;
-            color: var(--text-bright);
-        }
-
-        .readings-table tr:last-child td {
-            border-bottom: none;
-        }
-
-        .readings-table-wrapper {
-            max-height: 240px;
-            overflow-y: auto;
-            background: var(--bg-deep);
-            border-radius: var(--radius-md);
-        }
+        .readings-table tr:last-child td { border-bottom: none; }
 
         .readings-empty {
-            padding: 32px;
+            padding: 24px;
             text-align: center;
             color: var(--text-muted);
-            font-size: 13px;
+            font-size: 11px;
         }
 
         /* Modal actions */
         .modal-actions {
             display: flex;
-            gap: 12px;
-            margin-top: 24px;
-            padding-top: 24px;
+            gap: 10px;
+            margin-top: 20px;
+            padding-top: 20px;
             border-top: 1px solid var(--border-subtle);
         }
 
         .btn-danger {
-            background: rgba(255, 71, 87, 0.1);
+            background: var(--status-offline-dim);
             color: var(--status-offline);
-            border: 1px solid rgba(255, 71, 87, 0.2);
+            border: 1px solid rgba(233, 75, 82, 0.2);
         }
 
         .btn-danger:hover {
-            background: rgba(255, 71, 87, 0.2);
+            background: rgba(233, 75, 82, 0.2);
         }
 
-        /* Info footer */
-        .info-footer {
-            margin-top: 48px;
-            padding: 24px;
-            background: var(--bg-surface);
-            border: 1px solid var(--border-subtle);
-            border-radius: var(--radius-lg);
+        /* Command section */
+        .command-section {
+            margin-top: 20px;
         }
 
-        .info-footer h3 {
-            font-size: 12px;
-            text-transform: uppercase;
-            letter-spacing: 0.1em;
-            color: var(--text-muted);
-            margin-bottom: 16px;
-        }
-
-        .status-legend {
+        .command-buttons {
             display: flex;
-            gap: 32px;
+            gap: 6px;
             flex-wrap: wrap;
         }
 
-        .legend-item {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            font-size: 13px;
-            color: var(--text-secondary);
+        /* ==================== RESPONSIVE ==================== */
+        @media (max-width: 1024px) {
+            .main {
+                grid-template-columns: 1fr;
+                grid-template-rows: 45vh 1fr;
+            }
+
+            .sidebar {
+                border-left: none;
+                border-top: 1px solid var(--border-subtle);
+            }
+
+            .analytics-section {
+                display: none;
+            }
         }
 
-        .legend-dot {
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-        }
-
-        .legend-dot.online { background: var(--status-online); box-shadow: 0 0 8px var(--status-online); }
-        .legend-dot.warning { background: var(--status-warning); box-shadow: 0 0 8px var(--status-warning); }
-        .legend-dot.offline { background: var(--status-offline); box-shadow: 0 0 8px var(--status-offline); }
-
-        /* Responsive */
-        @media (max-width: 768px) {
+        @media (max-width: 640px) {
             .header {
-                padding: 16px 20px;
                 flex-direction: column;
-                gap: 16px;
-                align-items: stretch;
+                gap: 12px;
+                padding: 12px 16px;
             }
 
             .header-actions {
-                justify-content: stretch;
+                width: 100%;
+                justify-content: space-between;
             }
 
-            .header-actions .btn {
+            .map-overlay {
+                flex-wrap: wrap;
+                top: 8px;
+                left: 8px;
+                right: 8px;
+            }
+
+            .map-stat {
                 flex: 1;
-                justify-content: center;
+                min-width: 0;
+                padding: 8px;
             }
 
-            .main {
-                padding: 20px;
-            }
-
-            .stats-row {
-                flex-direction: column;
-            }
-
-            .devices-grid {
-                grid-template-columns: 1fr;
-            }
-
-            .detail-stats {
-                grid-template-columns: 1fr;
-            }
-
-            .status-legend {
-                flex-direction: column;
-                gap: 12px;
+            .map-stat-value {
+                font-size: 18px;
             }
         }
 
         /* Scrollbar */
         ::-webkit-scrollbar {
-            width: 8px;
-            height: 8px;
+            width: 5px;
+            height: 5px;
         }
 
         ::-webkit-scrollbar-track {
-            background: var(--bg-deep);
+            background: var(--bg-base);
         }
 
         ::-webkit-scrollbar-thumb {
             background: var(--bg-elevated);
-            border-radius: 4px;
+            border-radius: 3px;
         }
 
         ::-webkit-scrollbar-thumb:hover {
@@ -1083,15 +1184,21 @@
     <div class="app">
         <header class="header">
             <div class="brand">
-                <div class="brand-icon">📡</div>
+                <div class="brand-logo">
+                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M2 17L12 22L22 17" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M2 12L12 17L22 12" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </div>
                 <div class="brand-text">
-                    <h1>NB-IoT Fleet Command</h1>
-                    <span>DataJam Device Management</span>
+                    <h1>Fleet <span>Command</span></h1>
+                    <span class="subtitle">DataJam NB-IoT</span>
                 </div>
             </div>
             <div class="header-actions">
                 <button class="btn btn-primary" onclick="showRegisterModal()">
-                    <span>+</span> Register Device
+                    <span>+</span> Register
                 </button>
                 <button class="btn btn-ghost btn-icon" onclick="loadDevices()" title="Refresh">
                     ↻
@@ -1100,149 +1207,336 @@
         </header>
 
         <main class="main">
-            <div id="stats" class="stats-row"></div>
-            <div id="todayMetrics" class="metrics-breakdown"></div>
+            <section class="map-section">
+                <div id="map"></div>
 
-            <div id="chartSection" class="chart-section" style="display: none;">
-                <div class="chart-header">
-                    <span class="chart-title">Hourly Activity</span>
-                    <div class="chart-filters">
-                        <button class="chart-filter-btn active" onclick="setChartDays(1)">24h</button>
-                        <button class="chart-filter-btn" onclick="setChartDays(3)">3 Days</button>
-                        <button class="chart-filter-btn" onclick="setChartDays(7)">7 Days</button>
+                <div class="map-overlay" id="mapStats">
+                    <div class="map-stat">
+                        <div class="map-stat-label">Total</div>
+                        <div class="map-stat-value" id="statTotal">-</div>
+                    </div>
+                    <div class="map-stat online">
+                        <div class="map-stat-label">Online</div>
+                        <div class="map-stat-value" id="statOnline">-</div>
+                    </div>
+                    <div class="map-stat warning">
+                        <div class="map-stat-label">Warning</div>
+                        <div class="map-stat-value" id="statWarning">-</div>
+                    </div>
+                    <div class="map-stat offline">
+                        <div class="map-stat-label">Offline</div>
+                        <div class="map-stat-value" id="statOffline">-</div>
                     </div>
                 </div>
-                <div id="hourlyChart" class="chart-container"></div>
-                <div class="chart-legend">
-                    <div class="legend-item-chart"><span class="legend-color impressions"></span> Impressions</div>
-                    <div class="legend-item-chart"><span class="legend-color unique"></span> Unique</div>
-                    <div class="legend-item-chart"><span class="legend-color apple"></span> Apple</div>
-                    <div class="legend-item-chart"><span class="legend-color other"></span> Other</div>
-                </div>
-            </div>
 
-            <div class="section-header" style="margin-top: 32px;">
-                <span class="section-title">Fleet Devices</span>
-            </div>
-
-            <div id="devices" class="devices-grid">
-                <div class="loading-state">
-                    <div class="loading-spinner"></div>
-                    <span>Connecting to fleet...</span>
-                </div>
-            </div>
-
-            <div class="info-footer">
-                <h3>Status Reference</h3>
-                <div class="status-legend">
+                <div class="map-legend">
                     <div class="legend-item">
                         <span class="legend-dot online"></span>
-                        <span><strong>Online</strong> — Heartbeat within 24 hours</span>
+                        <span>Online (&lt;24h)</span>
                     </div>
                     <div class="legend-item">
                         <span class="legend-dot warning"></span>
-                        <span><strong>Warning</strong> — 24-48 hours since last contact</span>
+                        <span>Warning (24-48h)</span>
                     </div>
                     <div class="legend-item">
                         <span class="legend-dot offline"></span>
-                        <span><strong>Offline</strong> — No contact for 48+ hours</span>
+                        <span>Offline (&gt;48h)</span>
                     </div>
                 </div>
-            </div>
+            </section>
+
+            <aside class="sidebar">
+                <div class="sidebar-header">
+                    <span class="sidebar-title">Fleet Devices</span>
+                    <span class="device-count" id="deviceCount">-</span>
+                </div>
+
+                <div class="metrics-panel">
+                    <div class="metrics-grid">
+                        <div class="metric-card">
+                            <div class="metric-icon">📊</div>
+                            <div class="metric-value" id="metricImpressions">-</div>
+                            <div class="metric-label">Today's Impressions</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-icon">👥</div>
+                            <div class="metric-value" id="metricUnique">-</div>
+                            <div class="metric-label">Unique Devices</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-icon"></div>
+                            <div class="metric-value" id="metricApple">-</div>
+                            <div class="metric-label">Apple</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-icon">📱</div>
+                            <div class="metric-value" id="metricOther">-</div>
+                            <div class="metric-label">Other</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- NEW: Dwell Time Analytics -->
+                <div class="analytics-section">
+                    <div class="section-title">Dwell Time (Today)</div>
+                    <div class="dwell-chart" id="dwellChart">
+                        <div class="dwell-bar" data-type="driveby">
+                            <div class="dwell-bar-value" id="dwellDriveby">-</div>
+                            <div class="dwell-bar-fill" style="height: 20%;"></div>
+                            <div class="dwell-bar-label">0-1m<br>Drive-by</div>
+                        </div>
+                        <div class="dwell-bar" data-type="brief">
+                            <div class="dwell-bar-value" id="dwellBrief">-</div>
+                            <div class="dwell-bar-fill" style="height: 30%;"></div>
+                            <div class="dwell-bar-label">1-5m<br>Brief</div>
+                        </div>
+                        <div class="dwell-bar" data-type="engaged">
+                            <div class="dwell-bar-value" id="dwellEngaged">-</div>
+                            <div class="dwell-bar-fill" style="height: 25%;"></div>
+                            <div class="dwell-bar-label">5-10m<br>Engaged</div>
+                        </div>
+                        <div class="dwell-bar" data-type="loyal">
+                            <div class="dwell-bar-value" id="dwellLoyal">-</div>
+                            <div class="dwell-bar-fill" style="height: 15%;"></div>
+                            <div class="dwell-bar-label">10m+<br>Loyal</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- NEW: RSSI Distance Zones -->
+                <div class="analytics-section">
+                    <div class="section-title">Proximity Zones (Today)</div>
+                    <div class="rssi-radar">
+                        <div class="rssi-ring remote"></div>
+                        <div class="rssi-ring far"></div>
+                        <div class="rssi-ring near"></div>
+                        <div class="rssi-ring immediate"></div>
+                        <div class="rssi-device"></div>
+                    </div>
+                    <div class="rssi-legend">
+                        <div class="rssi-legend-item" data-zone="immediate">
+                            <div class="rssi-legend-value" id="rssiImmediate">-</div>
+                            <div class="rssi-legend-label">&lt;2m</div>
+                        </div>
+                        <div class="rssi-legend-item" data-zone="near">
+                            <div class="rssi-legend-value" id="rssiNear">-</div>
+                            <div class="rssi-legend-label">2-5m</div>
+                        </div>
+                        <div class="rssi-legend-item" data-zone="far">
+                            <div class="rssi-legend-value" id="rssiFar">-</div>
+                            <div class="rssi-legend-label">5-15m</div>
+                        </div>
+                        <div class="rssi-legend-item" data-zone="remote">
+                            <div class="rssi-legend-value" id="rssiRemote">-</div>
+                            <div class="rssi-legend-label">&gt;15m</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="device-list" id="deviceList">
+                    <div class="loading-state">
+                        <div class="loading-spinner"></div>
+                        <span>Connecting to fleet...</span>
+                    </div>
+                </div>
+            </aside>
         </main>
     </div>
 
     <div id="modal"></div>
 
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
     <script>
-        const API_BASE = '/.netlify/functions/nbiot-api';
-        let currentChartDays = 1;
+        // API hosted on datajamreports.com (Netlify functions)
+        const API_BASE = 'https://datajamreports.com/.netlify/functions/nbiot-api';
+
+        // Simple auth headers for admin access
+        function getAuthHeaders() {
+            return { 'Content-Type': 'application/json' };
+        }
+
+        let map;
+        let markers = [];
+
+        function initMap() {
+            const darkTiles = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+
+            map = L.map('map', {
+                center: [34.0522, -118.2437],
+                zoom: 10,
+                zoomControl: true
+            });
+
+            L.tileLayer(darkTiles, {
+                attribution: '&copy; OSM &copy; CARTO',
+                subdomains: 'abcd',
+                maxZoom: 19
+            }).addTo(map);
+
+            map.zoomControl.setPosition('bottomright');
+        }
+
+        function createMarker(device) {
+            const status = device.connection_status || 'unknown';
+            const lat = device.latitude || 34.0522;
+            const lng = device.longitude || -118.2437;
+
+            const markerHtml = `<div class="device-marker ${status}">${device.device_id.slice(-2)}</div>`;
+
+            const icon = L.divIcon({
+                html: markerHtml,
+                className: 'custom-marker-container',
+                iconSize: [36, 36],
+                iconAnchor: [18, 18]
+            });
+
+            const marker = L.marker([lat, lng], { icon }).addTo(map);
+
+            marker.bindPopup(`
+                <div style="font-family: 'Poppins', sans-serif; padding: 8px; min-width: 160px;">
+                    <div style="font-family: 'JetBrains Mono', monospace; font-size: 14px; font-weight: 600; margin-bottom: 2px;">${device.device_id}</div>
+                    <div style="font-size: 11px; color: #888; margin-bottom: 10px;">${device.location_name || device.project_name || 'Unassigned'}</div>
+                    <button onclick="showDeviceDetail('${device.device_id}')" style="
+                        width: 100%;
+                        padding: 8px;
+                        background: linear-gradient(135deg, #E62F6E, #E94B52);
+                        border: none;
+                        border-radius: 8px;
+                        color: white;
+                        font-family: inherit;
+                        font-size: 10px;
+                        font-weight: 600;
+                        text-transform: uppercase;
+                        letter-spacing: 0.03em;
+                        cursor: pointer;
+                    ">View Details</button>
+                </div>
+            `);
+
+            markers.push(marker);
+            return marker;
+        }
+
+        function clearMarkers() {
+            markers.forEach(m => map.removeLayer(m));
+            markers = [];
+        }
+
+        function fitMapToMarkers() {
+            if (markers.length === 0) return;
+            const group = new L.featureGroup(markers);
+            map.fitBounds(group.getBounds().pad(0.2));
+        }
 
         async function loadDevices() {
-            const devicesEl = document.getElementById('devices');
-            const statsEl = document.getElementById('stats');
-
-            devicesEl.innerHTML = `
-                <div class="loading-state">
-                    <div class="loading-spinner"></div>
-                    <span>Connecting to fleet...</span>
-                </div>
-            `;
+            const listEl = document.getElementById('deviceList');
+            listEl.innerHTML = `<div class="loading-state"><div class="loading-spinner"></div><span>Connecting to fleet...</span></div>`;
 
             try {
-                const res = await fetch(`${API_BASE}/devices`);
+                const res = await fetch(`${API_BASE}/devices`, { headers: getAuthHeaders() });
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
                 const data = await res.json();
                 const { devices, stats } = data;
 
-                // Render stats
-                statsEl.innerHTML = `
-                    <div class="stat-card">
-                        <div class="stat-label">Total Devices</div>
-                        <div class="stat-value">${stats.total}</div>
-                    </div>
-                    <div class="stat-card online">
-                        <div class="stat-label">Online</div>
-                        <div class="stat-value">${stats.online}</div>
-                    </div>
-                    <div class="stat-card warning" style="${stats.warning === 0 ? 'opacity: 0.5' : ''}">
-                        <div class="stat-label">Warning</div>
-                        <div class="stat-value">${stats.warning}</div>
-                    </div>
-                    <div class="stat-card offline" style="${stats.offline === 0 ? 'opacity: 0.5' : ''}">
-                        <div class="stat-label">Offline</div>
-                        <div class="stat-value">${stats.offline}</div>
-                    </div>
-                `;
+                document.getElementById('statTotal').textContent = stats.total;
+                document.getElementById('statOnline').textContent = stats.online;
+                document.getElementById('statWarning').textContent = stats.warning;
+                document.getElementById('statOffline').textContent = stats.offline;
+                document.getElementById('deviceCount').textContent = `${stats.total} device${stats.total !== 1 ? 's' : ''}`;
 
-                // Load today's detailed metrics
+                clearMarkers();
+                devices.forEach(d => {
+                    if (d.latitude && d.longitude) createMarker(d);
+                });
+
+                if (markers.length > 0) setTimeout(() => fitMapToMarkers(), 100);
+
                 loadTodayMetrics();
 
-                // Render devices
                 if (devices.length === 0) {
-                    devicesEl.innerHTML = `
-                        <div class="empty-state">
-                            <div class="empty-state-icon">📡</div>
-                            <p>No devices registered yet.</p>
-                            <p style="color: var(--text-muted); margin-top: 8px;">Click "Register Device" to add your first JamBox.</p>
-                        </div>
-                    `;
+                    listEl.innerHTML = `<div class="empty-state"><div class="empty-state-icon">📡</div><p>No devices yet</p></div>`;
                     return;
                 }
 
-                devicesEl.innerHTML = devices.map(d => `
+                listEl.innerHTML = devices.map(d => `
                     <div class="device-card" onclick="showDeviceDetail('${d.device_id}')">
-                        <div class="device-header">
+                        <div class="device-card-header">
                             <div>
                                 <div class="device-id">${d.device_id}</div>
-                                <div class="device-project">${d.project_name || 'Unassigned'}</div>
+                                <div class="device-location">${d.location_name || d.project_name || 'Unassigned'}</div>
                             </div>
-                            <div class="status-indicator ${d.connection_status}">${d.connection_status}</div>
+                            <div class="status-badge ${d.connection_status}">${d.connection_status}</div>
                         </div>
-                        <div class="device-metrics">
-                            <div class="metric">
-                                <div class="metric-label">Location</div>
-                                <div class="metric-value">${d.location_name || '—'}</div>
+                        <div class="device-metrics-row">
+                            <div class="device-metric">
+                                <div class="device-metric-value">${d.last_signal_dbm ? d.last_signal_dbm + ' dBm' : '—'}</div>
+                                <div class="device-metric-label">Signal</div>
                             </div>
-                            <div class="metric">
-                                <div class="metric-label">Signal</div>
-                                <div class="metric-value">${d.last_signal_dbm ? d.last_signal_dbm + ' dBm' : '—'}</div>
+                            <div class="device-metric">
+                                <div class="device-metric-value">v${d.firmware_version || '—'}</div>
+                                <div class="device-metric-label">Firmware</div>
                             </div>
-                            <div class="metric">
-                                <div class="metric-label">Firmware</div>
-                                <div class="metric-value">v${d.firmware_version || '—'}</div>
-                            </div>
-                            <div class="metric">
-                                <div class="metric-label">Last Seen</div>
-                                <div class="metric-value">${d.last_seen_ago || 'Never'}</div>
+                            <div class="device-metric">
+                                <div class="device-metric-value">${d.last_seen_ago || 'Never'}</div>
+                                <div class="device-metric-label">Last Seen</div>
                             </div>
                         </div>
                     </div>
                 `).join('');
 
             } catch (err) {
-                devicesEl.innerHTML = `<div class="error-state">Failed to load fleet: ${err.message}</div>`;
+                listEl.innerHTML = `<div class="empty-state" style="color: var(--status-offline);">Failed to load: ${err.message}</div>`;
+            }
+        }
+
+        async function loadTodayMetrics() {
+            try {
+                const res = await fetch(`${API_BASE}/stats`, { headers: getAuthHeaders() });
+                if (!res.ok) return;
+                const data = await res.json();
+                const { today } = data;
+
+                document.getElementById('metricImpressions').textContent = (today.total_impressions || 0).toLocaleString();
+                document.getElementById('metricUnique').textContent = (today.total_unique || 0).toLocaleString();
+                document.getElementById('metricApple').textContent = (today.total_apple || 0).toLocaleString();
+                document.getElementById('metricOther').textContent = (today.total_android || 0).toLocaleString();
+
+                // Update Dwell Time chart
+                const dwellTotal = (today.dwell_0_1 || 0) + (today.dwell_1_5 || 0) + (today.dwell_5_10 || 0) + (today.dwell_10plus || 0);
+                document.getElementById('dwellDriveby').textContent = (today.dwell_0_1 || 0).toLocaleString();
+                document.getElementById('dwellBrief').textContent = (today.dwell_1_5 || 0).toLocaleString();
+                document.getElementById('dwellEngaged').textContent = (today.dwell_5_10 || 0).toLocaleString();
+                document.getElementById('dwellLoyal').textContent = (today.dwell_10plus || 0).toLocaleString();
+
+                // Update dwell bar heights
+                if (dwellTotal > 0) {
+                    const bars = document.querySelectorAll('.dwell-bar');
+                    const values = [today.dwell_0_1 || 0, today.dwell_1_5 || 0, today.dwell_5_10 || 0, today.dwell_10plus || 0];
+                    const maxVal = Math.max(...values, 1);
+                    bars.forEach((bar, i) => {
+                        const pct = Math.max(5, (values[i] / maxVal) * 100);
+                        bar.querySelector('.dwell-bar-fill').style.height = pct + '%';
+                    });
+                }
+
+                // Update RSSI zones
+                document.getElementById('rssiImmediate').textContent = (today.rssi_immediate || 0).toLocaleString();
+                document.getElementById('rssiNear').textContent = (today.rssi_near || 0).toLocaleString();
+                document.getElementById('rssiFar').textContent = (today.rssi_far || 0).toLocaleString();
+                document.getElementById('rssiRemote').textContent = (today.rssi_remote || 0).toLocaleString();
+
+                // Animate active zones
+                const rssiValues = [today.rssi_immediate || 0, today.rssi_near || 0, today.rssi_far || 0, today.rssi_remote || 0];
+                const rings = document.querySelectorAll('.rssi-ring');
+                rings.forEach((ring, i) => {
+                    ring.classList.toggle('active', rssiValues[3-i] > 0);
+                });
+
+            } catch (err) {
+                console.error('Failed to load today metrics:', err);
             }
         }
 
@@ -1250,38 +1544,35 @@
             const modal = document.getElementById('modal');
             modal.innerHTML = `
                 <div class="modal-overlay" onclick="if(event.target===this)closeModal()">
-                    <div class="modal">
+                    <div class="modal large">
                         <div class="modal-body">
-                            <div class="loading-state" style="padding: 40px;">
-                                <div class="loading-spinner"></div>
-                                <span>Loading device data...</span>
-                            </div>
+                            <div class="loading-state"><div class="loading-spinner"></div><span>Loading...</span></div>
                         </div>
                     </div>
                 </div>
             `;
 
             try {
-                const res = await fetch(`${API_BASE}/device/${deviceId}`);
+                const res = await fetch(`${API_BASE}/device/${deviceId}`, { headers: getAuthHeaders() });
                 const data = await res.json();
                 const { device, recent_readings } = data;
 
                 modal.innerHTML = `
                     <div class="modal-overlay" onclick="if(event.target===this)closeModal()">
-                        <div class="modal">
+                        <div class="modal large">
                             <div class="modal-header">
                                 <div>
-                                    <div class="modal-title">${device.device_id}</div>
-                                    <div class="modal-subtitle">${device.project_name || 'Unassigned Project'}</div>
+                                    <div class="modal-title device-id">${device.device_id}</div>
+                                    <div class="modal-subtitle">${device.location_name || device.project_name || 'Unassigned'}</div>
                                 </div>
                                 <button class="modal-close" onclick="closeModal()">×</button>
                             </div>
                             <div class="modal-body">
-                                <div style="margin-bottom: 20px;">
-                                    <div class="status-indicator ${device.connection_status}" style="display: inline-flex;">${device.connection_status}</div>
+                                <div style="margin-bottom: 16px;">
+                                    <div class="status-badge ${device.connection_status}" style="display: inline-flex;">${device.connection_status}</div>
                                 </div>
 
-                                <div class="detail-stats">
+                                <div class="detail-grid">
                                     <div class="detail-stat">
                                         <div class="detail-stat-label">Last Contact</div>
                                         <div class="detail-stat-value">${device.last_seen_ago || 'Never'}</div>
@@ -1291,8 +1582,8 @@
                                         <div class="detail-stat-value">${device.last_signal_dbm ? device.last_signal_dbm + ' dBm' : '—'}</div>
                                     </div>
                                     <div class="detail-stat">
-                                        <div class="detail-stat-label">Location</div>
-                                        <div class="detail-stat-value">${device.location_name || '—'}</div>
+                                        <div class="detail-stat-label">Coordinates</div>
+                                        <div class="detail-stat-value">${device.latitude && device.longitude ? device.latitude.toFixed(4) + ', ' + device.longitude.toFixed(4) : '—'}</div>
                                     </div>
                                     <div class="detail-stat">
                                         <div class="detail-stat-label">Firmware</div>
@@ -1309,21 +1600,21 @@
                                                 <table class="readings-table">
                                                     <thead>
                                                         <tr>
-                                                            <th>Timestamp</th>
-                                                            <th>Impressions</th>
-                                                            <th>Unique</th>
-                                                            <th>Apple</th>
-                                                            <th>Other</th>
+                                                            <th>Time</th>
+                                                            <th>Impr</th>
+                                                            <th>Uniq</th>
+                                                            <th>Dwell</th>
+                                                            <th>Zones</th>
                                                         </tr>
                                                     </thead>
                                                     <tbody>
-                                                        ${recent_readings.slice(0, 10).map(r => `
+                                                        ${recent_readings.slice(0, 8).map(r => `
                                                             <tr>
-                                                                <td>${new Date(r.timestamp).toLocaleString()}</td>
-                                                                <td>${(r.impressions || 0).toLocaleString()}</td>
-                                                                <td>${(r.unique_count || 0).toLocaleString()}</td>
-                                                                <td><span class="device-type-badge badge-apple">${(r.apple_count || 0).toLocaleString()}</span></td>
-                                                                <td><span class="device-type-badge badge-other">${(r.android_count || 0).toLocaleString()}</span></td>
+                                                                <td>${new Date(r.timestamp).toLocaleTimeString()}</td>
+                                                                <td>${r.impressions || 0}</td>
+                                                                <td>${r.unique_count || 0}</td>
+                                                                <td style="font-size:9px;color:var(--text-muted);">${r.dwell_0_1||0}/${r.dwell_1_5||0}/${r.dwell_5_10||0}/${r.dwell_10plus||0}</td>
+                                                                <td style="font-size:9px;color:var(--text-muted);">${r.rssi_immediate||0}/${r.rssi_near||0}/${r.rssi_far||0}/${r.rssi_remote||0}</td>
                                                             </tr>
                                                         `).join('')}
                                                     </tbody>
@@ -1333,10 +1624,18 @@
                                     }
                                 </div>
 
+                                <div class="command-section">
+                                    <div class="readings-title">Remote Commands</div>
+                                    <div class="command-buttons">
+                                        <button class="btn btn-ghost btn-sm" onclick="sendCommand('${device.device_id}', 'send_now')">📤 Force Send</button>
+                                        <button class="btn btn-ghost btn-sm" onclick="sendCommand('${device.device_id}', 'geolocate')">📍 Geolocate</button>
+                                        <button class="btn btn-ghost btn-sm" onclick="sendCommand('${device.device_id}', 'reboot')" style="color:var(--status-warning);">🔄 Reboot</button>
+                                    </div>
+                                    <div class="form-hint" style="margin-top:6px;">Commands execute on next data send</div>
+                                </div>
+
                                 <div class="modal-actions">
-                                    <button class="btn btn-danger" onclick="regenerateToken('${device.device_id}')">
-                                        Regenerate Token
-                                    </button>
+                                    <button class="btn btn-danger" onclick="regenerateToken('${device.device_id}')">Regenerate Token</button>
                                     <button class="btn btn-ghost" onclick="closeModal()">Close</button>
                                 </div>
                             </div>
@@ -1348,10 +1647,8 @@
                     <div class="modal-overlay" onclick="if(event.target===this)closeModal()">
                         <div class="modal">
                             <div class="modal-body">
-                                <div class="error-state">Failed to load device: ${err.message}</div>
-                                <div class="modal-actions">
-                                    <button class="btn btn-ghost" onclick="closeModal()">Close</button>
-                                </div>
+                                <div class="empty-state" style="color:var(--status-offline);">Failed: ${err.message}</div>
+                                <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Close</button></div>
                             </div>
                         </div>
                     </div>
@@ -1377,17 +1674,14 @@
                                 <input type="text" class="form-input mono" id="reg_device_id" placeholder="JBNB0001" maxlength="8" oninput="this.value=this.value.toUpperCase()">
                                 <div class="form-hint">Format: JBNB followed by 4 digits</div>
                             </div>
-
                             <div class="form-group">
                                 <label class="form-label">Project Name</label>
                                 <input type="text" class="form-input" id="reg_project" placeholder="e.g., Downtown Network">
                             </div>
-
                             <div class="form-group">
                                 <label class="form-label">Location</label>
                                 <input type="text" class="form-input" id="reg_location" placeholder="e.g., Main Street Mall">
                             </div>
-
                             <div class="modal-actions">
                                 <button class="btn btn-primary" onclick="registerDevice()">Register Device</button>
                                 <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
@@ -1412,17 +1706,12 @@
             try {
                 const res = await fetch(`${API_BASE}/device/register`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        device_id: deviceId,
-                        project_name: project || null,
-                        location_name: location || null
-                    })
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({ device_id: deviceId, project_name: project || null, location_name: location || null })
                 });
 
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.error);
-
                 showTokenModal(deviceId, data.token);
 
             } catch (err) {
@@ -1437,23 +1726,19 @@
                     <div class="modal">
                         <div class="modal-header">
                             <div>
-                                <div class="modal-title" style="color: var(--status-online);">✓ ${deviceId}</div>
+                                <div class="modal-title device-id" style="color:var(--status-online);">✓ ${deviceId}</div>
                                 <div class="modal-subtitle">Device registered successfully</div>
                             </div>
                         </div>
                         <div class="modal-body">
                             <div class="token-container">
-                                <div class="token-label">
-                                    <span>🔑</span> Authentication Token
-                                </div>
+                                <div class="token-label">🔑 Authentication Token</div>
                                 <div class="token-value" id="tokenValue">${token}</div>
                             </div>
-
                             <div class="token-warning">
                                 <span>⚠️</span>
-                                <span>This token will only be shown once. Save it securely before closing this dialog.</span>
+                                <span>This token will only be shown once. Save it securely.</span>
                             </div>
-
                             <div class="modal-actions">
                                 <button class="btn btn-ghost" onclick="copyToken()">Copy Token</button>
                                 <button class="btn btn-primary" onclick="closeModal(); loadDevices();">Done</button>
@@ -1468,29 +1753,39 @@
             const token = document.getElementById('tokenValue').textContent;
             navigator.clipboard.writeText(token).then(() => {
                 const btn = event.target;
-                const original = btn.textContent;
                 btn.textContent = 'Copied!';
                 btn.style.color = 'var(--status-online)';
-                setTimeout(() => {
-                    btn.textContent = original;
-                    btn.style.color = '';
-                }, 2000);
+                setTimeout(() => { btn.textContent = 'Copy Token'; btn.style.color = ''; }, 2000);
             });
         }
 
         async function regenerateToken(deviceId) {
-            if (!confirm(`Regenerate token for ${deviceId}?\n\nThe current token will be invalidated and the device will need to be re-flashed.`)) return;
+            if (!confirm(`Regenerate token for ${deviceId}?\n\nThe device will need to be re-flashed.`)) return;
 
             try {
-                const res = await fetch(`${API_BASE}/device/${deviceId}/regenerate`, { method: 'POST' });
+                const res = await fetch(`${API_BASE}/device/${deviceId}/regenerate`, { method: 'POST', headers: getAuthHeaders() });
                 const data = await res.json();
-
                 if (!res.ok) throw new Error(data.error);
-
                 showTokenModal(deviceId, data.token);
-
             } catch (err) {
-                alert('Failed to regenerate token: ' + err.message);
+                alert('Failed: ' + err.message);
+            }
+        }
+
+        async function sendCommand(deviceId, command) {
+            if (!confirm(`Send "${command}" to ${deviceId}?`)) return;
+
+            try {
+                const res = await fetch(`${API_BASE}/device/${deviceId}/command`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({ command })
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error);
+                alert(`✓ Command "${command}" queued for ${deviceId}`);
+            } catch (err) {
+                alert('Failed: ' + err.message);
             }
         }
 
@@ -1498,112 +1793,10 @@
             document.getElementById('modal').innerHTML = '';
         }
 
-        async function loadTodayMetrics() {
-            try {
-                const res = await fetch(`${API_BASE}/stats`);
-                if (!res.ok) return;
-                const data = await res.json();
-                const { today } = data;
-
-                const metricsEl = document.getElementById('todayMetrics');
-                metricsEl.innerHTML = `
-                    <div class="metric-breakdown-card">
-                        <div class="metric-icon impressions">📊</div>
-                        <div class="metric-data">
-                            <div class="metric-data-label">Today's Impressions</div>
-                            <div class="metric-data-value">${(today.total_impressions || 0).toLocaleString()}</div>
-                        </div>
-                    </div>
-                    <div class="metric-breakdown-card">
-                        <div class="metric-icon" style="background: rgba(0, 229, 160, 0.15);">👥</div>
-                        <div class="metric-data">
-                            <div class="metric-data-label">Unique Devices</div>
-                            <div class="metric-data-value">${(today.total_unique || 0).toLocaleString()}</div>
-                        </div>
-                    </div>
-                    <div class="metric-breakdown-card">
-                        <div class="metric-icon apple"></div>
-                        <div class="metric-data">
-                            <div class="metric-data-label">Apple Devices</div>
-                            <div class="metric-data-value">${(today.total_apple || 0).toLocaleString()}</div>
-                        </div>
-                    </div>
-                    <div class="metric-breakdown-card">
-                        <div class="metric-icon other">📱</div>
-                        <div class="metric-data">
-                            <div class="metric-data-label">Other Devices</div>
-                            <div class="metric-data-value">${(today.total_android || 0).toLocaleString()}</div>
-                        </div>
-                    </div>
-                `;
-
-                // Also load the hourly chart
-                loadHourlyChart(currentChartDays);
-            } catch (err) {
-                console.error('Failed to load today metrics:', err);
-            }
-        }
-
-        async function loadHourlyChart(days = 1) {
-            currentChartDays = days;
-            const chartEl = document.getElementById('hourlyChart');
-            const sectionEl = document.getElementById('chartSection');
-
-            // Update active button
-            document.querySelectorAll('.chart-filter-btn').forEach(btn => {
-                btn.classList.remove('active');
-                if (btn.textContent.includes(days === 1 ? '24h' : days === 3 ? '3 Days' : '7 Days')) {
-                    btn.classList.add('active');
-                }
-            });
-
-            try {
-                const res = await fetch(`${API_BASE}/hourly?days=${days}`);
-                if (!res.ok) throw new Error('Failed to load hourly data');
-                const data = await res.json();
-                const { hourly } = data;
-
-                if (!hourly || hourly.length === 0) {
-                    sectionEl.style.display = 'none';
-                    return;
-                }
-
-                sectionEl.style.display = 'block';
-
-                // Find max value for scaling
-                const maxVal = Math.max(...hourly.map(h => h.impressions), 1);
-
-                // Limit bars to show (max 48 for readability)
-                const displayHours = hourly.slice(-48);
-
-                chartEl.innerHTML = displayHours.map(h => {
-                    const impressionHeight = Math.max((h.impressions / maxVal) * 160, 2);
-                    const uniqueHeight = Math.max((h.unique_count / maxVal) * 160, 1);
-                    const hourLabel = h.hour.split(' ')[1] || h.hour;
-
-                    return `
-                        <div class="chart-bar-group" title="${h.hour}\nImpressions: ${h.impressions.toLocaleString()}\nUnique: ${h.unique_count.toLocaleString()}\nApple: ${h.apple_count.toLocaleString()}\nOther: ${h.android_count.toLocaleString()}">
-                            <div style="display: flex; gap: 1px; align-items: flex-end; height: 160px;">
-                                <div class="chart-bar impressions" style="height: ${impressionHeight}px; width: 8px;"></div>
-                                <div class="chart-bar unique" style="height: ${uniqueHeight}px; width: 6px;"></div>
-                            </div>
-                            <span class="chart-label">${hourLabel}</span>
-                        </div>
-                    `;
-                }).join('');
-
-            } catch (err) {
-                console.error('Failed to load hourly chart:', err);
-                sectionEl.style.display = 'none';
-            }
-        }
-
-        function setChartDays(days) {
-            loadHourlyChart(days);
-        }
-
         // Initialize
+        initMap();
         loadDevices();
+        setInterval(loadDevices, 120000);
     </script>
 </body>
 </html>
