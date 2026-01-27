@@ -287,11 +287,11 @@ exports.handler = async (event) => {
       const devices = await supabaseQuery('GET', 'nbiot_devices?order=device_id');
       const formatted = (devices || []).map(formatDevice);
 
-      // Get today's readings with all metrics
+      // Get today's readings with all metrics including dwell time and RSSI zones
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const todayStats = await supabaseQuery('GET',
-        `nbiot_readings?timestamp=gte.${today.toISOString()}&select=impressions,unique_count,apple_count,android_count,signal_dbm`
+        `nbiot_readings?timestamp=gte.${today.toISOString()}&select=impressions,unique_count,apple_count,android_count,signal_dbm,dwell_0_1,dwell_1_5,dwell_5_10,dwell_10plus,rssi_immediate,rssi_near,rssi_far,rssi_remote`
       );
 
       const totalImpressions = (todayStats || []).reduce((sum, r) => sum + (r.impressions || 0), 0);
@@ -301,6 +301,18 @@ exports.handler = async (event) => {
       const avgSignal = todayStats && todayStats.length > 0
         ? Math.round(todayStats.reduce((sum, r) => sum + (r.signal_dbm || 0), 0) / todayStats.length)
         : null;
+
+      // Dwell time aggregates
+      const dwell0_1 = (todayStats || []).reduce((sum, r) => sum + (r.dwell_0_1 || 0), 0);
+      const dwell1_5 = (todayStats || []).reduce((sum, r) => sum + (r.dwell_1_5 || 0), 0);
+      const dwell5_10 = (todayStats || []).reduce((sum, r) => sum + (r.dwell_5_10 || 0), 0);
+      const dwell10plus = (todayStats || []).reduce((sum, r) => sum + (r.dwell_10plus || 0), 0);
+
+      // RSSI zone aggregates
+      const rssiImmediate = (todayStats || []).reduce((sum, r) => sum + (r.rssi_immediate || 0), 0);
+      const rssiNear = (todayStats || []).reduce((sum, r) => sum + (r.rssi_near || 0), 0);
+      const rssiFar = (todayStats || []).reduce((sum, r) => sum + (r.rssi_far || 0), 0);
+      const rssiRemote = (todayStats || []).reduce((sum, r) => sum + (r.rssi_remote || 0), 0);
 
       return {
         statusCode: 200,
@@ -318,7 +330,17 @@ exports.handler = async (event) => {
             total_unique: totalUnique,
             total_apple: totalApple,
             total_android: totalAndroid,
-            avg_signal: avgSignal
+            avg_signal: avgSignal,
+            // Dwell time buckets
+            dwell_0_1: dwell0_1,
+            dwell_1_5: dwell1_5,
+            dwell_5_10: dwell5_10,
+            dwell_10plus: dwell10plus,
+            // RSSI distance zones
+            rssi_immediate: rssiImmediate,
+            rssi_near: rssiNear,
+            rssi_far: rssiFar,
+            rssi_remote: rssiRemote
           },
           devices: formatted.map(d => ({
             device_id: d.device_id,
