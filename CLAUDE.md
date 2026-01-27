@@ -25,13 +25,13 @@ Use these agents for specific tasks:
 
 ## Current Status (2026-01-27)
 
-**STATUS: FULL STACK OPERATIONAL** - v3.0 firmware deployed, dwell time & RSSI zones live!
+**STATUS: FULL STACK OPERATIONAL** - v4.0 firmware with BLE device counting!
 
 ### Active Devices
 | Device ID | Firmware | Location | Status |
 |-----------|----------|----------|--------|
-| JBNB0001 | v2.8 | Dev Unit 1 | Online (local dev) |
-| JBNB0002 | **v3.0** | 26th & Wilshire, Santa Monica | **ACTIVE** - sending dwell time + RSSI zones |
+| JBNB0001 | **v4.0** | Dev Unit 1 | Pending update |
+| JBNB0002 | **v4.0** | Home - Dev Unit | Pending update |
 
 ### Isolated Test Environment Architecture
 ```
@@ -59,6 +59,7 @@ Shop owner view - simple language, no technical jargon:
 - Visitors Today (big number)
 - Busiest Hour
 - Foot Traffic chart (Today/Yesterday/Week tabs)
+- "Who's Visiting?" - device type breakdown (Apple, Android, Other) via BLE
 - "Where Are They?" - proximity breakdown (At Counter, In Store, Window Shopping, Walking Past)
 - "How Long Do They Stay?" - engagement (Quick Glance, Browsing, Shopping, Loyal Customer)
 
@@ -68,6 +69,7 @@ Device management view:
 - Fleet status (Online/Warning/Offline counts)
 - Sensor list with signal strength
 - Device detail modal with recent activity
+- **Device Health section** - firmware version, signal quality bars, status badges
 
 ### Remote Command System (v3.0)
 Devices receive commands via both heartbeat AND reading responses:
@@ -85,8 +87,8 @@ curl -X POST "..." -d '{"command":"geolocate"}'
 ```
 Commands work on every 5-minute reading as well as daily heartbeat (v3.0 fix).
 
-### Firmware Version: 3.0
-### Backend Version: 2.5
+### Firmware Version: 4.0
+### Backend Version: 2.6
 
 ### Dwell Time Tracking (v3.0)
 Firmware tracks how long devices stay in range:
@@ -108,6 +110,44 @@ Firmware categorizes probes by signal strength (proves viewability):
 
 **Note:** Distances are approximate. Actual range depends on phone transmit power and obstacles.
 
+### BLE Device Counting (v4.0)
+Firmware scans Bluetooth Low Energy advertisements for accurate OS detection via manufacturer IDs.
+
+**Why BLE instead of WiFi for OS detection:**
+- WiFi probe requests use randomized MACs (no manufacturer info)
+- Android devices are often silent (not sending probes when not in use)
+- BLE advertisements contain manufacturer IDs registered with Bluetooth SIG
+
+**Manufacturer ID Classification:**
+| ID | Manufacturer | Classification |
+|----|--------------|----------------|
+| 0x004C | Apple Inc. | Apple |
+| 0x00E0 | Google (Fast Pair) | Android |
+| 0x0075 | Samsung | Android |
+| 0x0310 | Xiaomi | Android |
+| 0x0157 | Huawei | Android |
+| 0x03DA | OPPO | Android |
+| 0x03E5 | OnePlus | Android |
+| Others | — | Other |
+
+**Time-Slicing Architecture:**
+ESP32 shares radio between WiFi and BLE, so firmware alternates:
+- 12 seconds WiFi promiscuous mode (probe capture)
+- 3 seconds BLE passive scanning
+- 80/20 split maintains WiFi accuracy while adding BLE capability
+
+**BLE Payload Fields:**
+| Field | Description |
+|-------|-------------|
+| `ble_i` | Total BLE advertisements detected |
+| `ble_u` | Unique BLE devices (per-minute dedup) |
+| `ble_apple` | Apple device count |
+| `ble_android` | Android device count |
+| `ble_other` | Other BLE devices (wearables, IoT) |
+| `ble_rssi_avg` | Average BLE signal strength (dBm) |
+
+**Privacy:** Only randomized BLE addresses are counted (same as WiFi probes).
+
 ### Device Activation Portal
 Zero-touch device setup for customers:
 - **URL:** `https://datajamreports.com/activate/JBNB0001`
@@ -118,8 +158,21 @@ Zero-touch device setup for customers:
 ### Watchdog Timer (v3.0)
 Device auto-reboots if stuck for 5 minutes (ESP32 task watchdog).
 
+### OTA Rollback Protection (v3.1)
+Firmware uses ESP32 dual-partition OTA with automatic rollback:
+- New firmware must successfully send data to backend before being marked "valid"
+- If new firmware fails to connect/send, device auto-reboots to previous working firmware
+- Prevents bricked devices from bad OTA updates
+- Confirmation happens on first successful reading or heartbeat
+
+### Local Data Cache (v3.0)
+Device caches readings when cellular is unavailable:
+- 96-reading circular buffer (8 hours at 5-min intervals, or 48 hours at 30-min)
+- Cached readings sent automatically when connectivity resumes
+- No data loss during temporary cellular outages
+
 ### WiFi Geolocation (v2.3+)
-Device auto-locates on every boot:
+Device auto-locates on every boot and via remote `geolocate` command:
 1. Scans nearby WiFi networks (fast, ~3 sec)
 2. Retries modem connection (up to 5 attempts with 2s delays)
 3. Sends WiFi BSSIDs to backend
@@ -129,16 +182,28 @@ Device auto-locates on every boot:
 
 **Google API Key:** `REDACTED_GOOGLE_KEY` (iot Geolocate - no restrictions)
 
+**Limitations:** WiFi geolocation accuracy depends on Google's database of WiFi networks. In areas where Google hasn't mapped the local networks, or where visible networks are associated with other locations, the returned coordinates may be incorrect. Manual location entry may be needed in these cases.
+
+### Offline Device Alerts (v2.5)
+Scheduled Netlify function (`nbiot-alerts.js`) runs hourly:
+- Checks for devices offline more than 24 hours
+- Sends consolidated email via Resend API
+- Records alerts to `nbiot_alerts` table (prevents spam)
+- Email styled with DataJam branding
+
 ### Per-Minute Deduplication (v2.4)
 Probe counting now deduplicates per MAC per minute (MRC "opportunity to see" standard):
 - Same phone, 50 probes in 1 minute = 1 impression
 - Same phone, 50 probes over 10 minutes = 10 impressions
 - `unique` count represents "device-minutes" not "unique devices"
 
-### Device Classification
-Firmware classifies devices as **Apple vs Other** (not Android specifically):
-- **Apple:** Identified by OUI prefix (first 3 bytes of MAC)
-- **Other:** Everything else (Android, Windows, IoT devices, etc.)
+### Device Classification (v4.0)
+Firmware classifies devices via **BLE manufacturer IDs** (not WiFi OUI):
+- **Apple:** Manufacturer ID 0x004C (reliable)
+- **Android:** Google, Samsung, Xiaomi, Huawei, OPPO, OnePlus IDs
+- **Other:** Wearables, IoT devices, unidentified manufacturers
+
+WiFi probe requests no longer used for OS detection (unreliable with randomized MACs).
 
 ### LED Status Colors
 | Color | Meaning |
@@ -165,10 +230,11 @@ Firmware classifies devices as **Apple vs Other** (not Android specifically):
 | Hardware validation | ✓ Complete |
 | NB-IoT connectivity | ✓ T-Mobile Band 4 |
 | Linode server setup | ✓ Complete |
-| Flask backend v2.5 | ✓ Running with auth + geolocation + extended RSSI + heartbeat + device PIN |
+| Flask backend v2.6 | ✓ Running with auth + geolocation + extended RSSI + heartbeat + device PIN + BLE |
 | Device authentication | ✓ Token-based |
 | NB-IoT → Backend data flow | ✓ **VERIFIED** - JBNB0001 sending |
-| Probe capture firmware | ✓ **COMPLETE** - Privacy filter + Apple/Other classification |
+| Probe capture firmware | ✓ **COMPLETE** - Privacy filter + WiFi probes |
+| BLE device counting | ✓ **COMPLETE** - Accurate Apple/Android/Other via manufacturer IDs |
 | Supabase sync | ✓ COMPLETE - Cron job every 5 mins |
 
 ### Phase Status
@@ -187,19 +253,28 @@ NB-IoT has built-in network-layer encryption. TLS handshakes are unreliable over
 - **BLE Beacon advertising** - Proximity marketing feature. JamBox broadcasts beacon, client apps detect and trigger notifications. Hardware capable, needs firmware + client SDK.
 
 ### TODO
-- [ ] Polish Fleet Command UI based on real data
+- [x] Polish Fleet Command UI based on real data - DONE (Device Health section added)
 - [ ] Add remote command buttons to portal UI
 - [ ] Persistent interval change (NVS storage) for set_interval command
+- [ ] Device history/events table for audit trail
+- [ ] Manual location entry when WiFi geolocation fails
 
-### Firmware v3.0 Changes (Ready to Flash)
-When JBNB0002 is recalled, flash v3.0 firmware which includes:
+### Firmware v4.0 (2026-01-27)
+Major update: BLE device counting for accurate OS detection.
 
-| Change | Status | Description |
-|--------|--------|-------------|
-| **NTP-like time sync** | ✓ DONE | Syncs `g_bootTimestamp` from backend `server_time` in heartbeat response |
-| **Command parsing in readings** | ✓ DONE | Commands work in both heartbeat AND reading responses |
-| **Remote geolocate command** | ✓ DONE | `geolocate` command triggers fresh WiFi scan + location update |
-| **Watchdog timer** | ✓ DONE | 5-minute ESP32 watchdog for auto-recovery if device hangs |
+| Feature | Description |
+|---------|-------------|
+| **BLE Device Counting** | NimBLE passive scanning for accurate Apple/Android/Other detection via manufacturer IDs |
+| **Radio Time-Slicing** | 12s WiFi + 3s BLE alternating (80/20 split) |
+| **Removed WiFi OS Detection** | WiFi probe MAC-based classification removed (unreliable) |
+| **OTA Rollback Protection** | ESP32 dual-partition OTA - new firmware must successfully send data before being marked valid |
+| **NTP-like time sync** | Syncs `g_bootTimestamp` from backend `server_time` in heartbeat response |
+| **Command parsing in readings** | Commands work in both heartbeat AND reading responses |
+| **Remote geolocate command** | `geolocate` command triggers fresh WiFi scan + location update |
+| **Watchdog timer** | 5-minute ESP32 watchdog for auto-recovery if device hangs |
+| **Dwell time tracking** | 4 buckets: 0-1min, 1-5min, 5-10min, 10+min |
+| **RSSI distance zones** | 4 zones: immediate, near, far, remote |
+| **96-reading cache** | Circular buffer for offline resilience |
 
 **To flash:** Connect device, run `./scripts/NBJBTOOL.sh`, option 1, enter device ID.
 
@@ -295,39 +370,59 @@ Device JBNB0001 Token: B10fYoCjm0HWc8LltAXFsBpxw3pSCFALkDK5WVlIoIE
 | `/api/stats` | GET | System stats |
 | `/api/heartbeats` | GET | View heartbeat logs |
 
-### Device Payload Format (v2.7 firmware / v2.3 backend)
+### Device Payload Format (v4.0 firmware / v2.6 backend)
 ```json
 {
   "d": "JBNB0001",
   "t": "2026-01-25T12:15:00Z",
   "i": 450,
   "u": 120,
-  "apple": 52,
-  "android": 68,
-  "other": 5,
   "probe_rssi_avg": -62,
   "probe_rssi_min": -45,
   "probe_rssi_max": -88,
-  "cell_rssi": -85
+  "cell_rssi": -85,
+  "dwell_0_1": 25,
+  "dwell_1_5": 30,
+  "dwell_5_10": 10,
+  "dwell_10plus": 5,
+  "rssi_immediate": 8,
+  "rssi_near": 22,
+  "rssi_far": 45,
+  "rssi_remote": 45,
+  "ble_i": 200,
+  "ble_u": 85,
+  "ble_apple": 45,
+  "ble_android": 30,
+  "ble_other": 10,
+  "ble_rssi_avg": -58
 }
 ```
+
+**WiFi Probe Fields:**
 | Field | Description | Required |
 |-------|-------------|----------|
 | `d` | Device ID | Yes |
 | `t` | ISO 8601 timestamp | Yes |
-| `i` | Impressions (randomized MACs only) | Yes |
-| `u` | Unique count (deduplicated) | Yes |
-| `apple` | Apple device count | No |
-| `android` | Android device count | No |
-| `other` | Other/unknown device count | No |
-| `probe_rssi_avg` | Average probe RSSI (dBm) | No |
-| `probe_rssi_min` | Minimum probe RSSI (dBm, strongest) | No |
-| `probe_rssi_max` | Maximum probe RSSI (dBm, weakest) | No |
+| `i` | WiFi impressions (randomized MACs only) | Yes |
+| `u` | WiFi unique count (deduplicated per minute) | Yes |
+| `probe_rssi_avg` | Average WiFi probe RSSI (dBm) | No |
+| `probe_rssi_min` | Minimum WiFi probe RSSI (dBm, strongest) | No |
+| `probe_rssi_max` | Maximum WiFi probe RSSI (dBm, weakest) | No |
 | `cell_rssi` | Cellular signal strength (dBm) | No |
+| `dwell_*` | Dwell time bucket counts | No |
+| `rssi_*` | RSSI distance zone counts | No |
 
-**Backwards Compatibility:** `sig` is still accepted as alias for `cell_rssi`.
+**BLE Fields (v4.0+):**
+| Field | Description |
+|-------|-------------|
+| `ble_i` | Total BLE advertisements |
+| `ble_u` | Unique BLE devices (per-minute dedup) |
+| `ble_apple` | Apple devices (manufacturer ID 0x004C) |
+| `ble_android` | Android devices (Google, Samsung, etc.) |
+| `ble_other` | Other BLE devices |
+| `ble_rssi_avg` | Average BLE signal strength (dBm) |
 
-**Privacy Note:** Only randomized MACs are counted. Static MACs (potential PII) are filtered at the device level.
+**Privacy Note:** Only randomized MACs are counted for both WiFi and BLE. Static addresses are filtered at the device level.
 
 ### Service Management
 ```bash

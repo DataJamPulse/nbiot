@@ -1,6 +1,7 @@
 /**
- * NB-IoT Device Management API v1.1.0
+ * NB-IoT Device Management API v1.2.0
  * Standalone admin portal for NB-IoT JamBox fleet management.
+ * v1.2.0: Added BLE device counting fields for accurate OS detection.
  *
  * Endpoints:
  * - GET  /nbiot-api/devices         List all devices
@@ -287,11 +288,11 @@ exports.handler = async (event) => {
       const devices = await supabaseQuery('GET', 'nbiot_devices?order=device_id');
       const formatted = (devices || []).map(formatDevice);
 
-      // Get today's readings with all metrics including dwell time and RSSI zones
+      // Get today's readings with all metrics including dwell time, RSSI zones, and BLE
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const todayStats = await supabaseQuery('GET',
-        `nbiot_readings?timestamp=gte.${today.toISOString()}&select=impressions,unique_count,apple_count,android_count,signal_dbm,dwell_0_1,dwell_1_5,dwell_5_10,dwell_10plus,rssi_immediate,rssi_near,rssi_far,rssi_remote`
+        `nbiot_readings?timestamp=gte.${today.toISOString()}&select=impressions,unique_count,apple_count,android_count,signal_dbm,dwell_0_1,dwell_1_5,dwell_5_10,dwell_10plus,rssi_immediate,rssi_near,rssi_far,rssi_remote,ble_impressions,ble_unique,ble_apple,ble_android,ble_other`
       );
 
       const totalImpressions = (todayStats || []).reduce((sum, r) => sum + (r.impressions || 0), 0);
@@ -313,6 +314,13 @@ exports.handler = async (event) => {
       const rssiNear = (todayStats || []).reduce((sum, r) => sum + (r.rssi_near || 0), 0);
       const rssiFar = (todayStats || []).reduce((sum, r) => sum + (r.rssi_far || 0), 0);
       const rssiRemote = (todayStats || []).reduce((sum, r) => sum + (r.rssi_remote || 0), 0);
+
+      // BLE device counting aggregates (accurate OS detection via manufacturer IDs)
+      const bleImpressions = (todayStats || []).reduce((sum, r) => sum + (r.ble_impressions || 0), 0);
+      const bleUnique = (todayStats || []).reduce((sum, r) => sum + (r.ble_unique || 0), 0);
+      const bleApple = (todayStats || []).reduce((sum, r) => sum + (r.ble_apple || 0), 0);
+      const bleAndroid = (todayStats || []).reduce((sum, r) => sum + (r.ble_android || 0), 0);
+      const bleOther = (todayStats || []).reduce((sum, r) => sum + (r.ble_other || 0), 0);
 
       return {
         statusCode: 200,
@@ -340,7 +348,13 @@ exports.handler = async (event) => {
             rssi_immediate: rssiImmediate,
             rssi_near: rssiNear,
             rssi_far: rssiFar,
-            rssi_remote: rssiRemote
+            rssi_remote: rssiRemote,
+            // BLE device counts (accurate OS detection)
+            ble_impressions: bleImpressions,
+            ble_unique: bleUnique,
+            ble_apple: bleApple,
+            ble_android: bleAndroid,
+            ble_other: bleOther
           },
           devices: formatted.map(d => ({
             device_id: d.device_id,

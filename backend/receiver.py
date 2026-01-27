@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-DataJam NB-IoT Backend Receiver v2.4
+DataJam NB-IoT Backend Receiver v2.6
 Production-ready with device authentication, management, device type classification,
 WiFi-based geolocation with automatic timezone detection, extended RSSI metrics,
-and enhanced heartbeat tracking with uptime.
+enhanced heartbeat tracking with uptime, and BLE device counting.
 """
 
 import sqlite3
@@ -77,6 +77,14 @@ def init_db():
         probe_rssi_min INTEGER,
         probe_rssi_max INTEGER,
         cell_rssi INTEGER,
+        dwell_0_1 INTEGER DEFAULT 0,
+        dwell_1_5 INTEGER DEFAULT 0,
+        dwell_5_10 INTEGER DEFAULT 0,
+        dwell_10plus INTEGER DEFAULT 0,
+        rssi_immediate INTEGER DEFAULT 0,
+        rssi_near INTEGER DEFAULT 0,
+        rssi_far INTEGER DEFAULT 0,
+        rssi_remote INTEGER DEFAULT 0,
         received_at TEXT NOT NULL,
         synced_to_supabase INTEGER DEFAULT 0,
         FOREIGN KEY (device_id) REFERENCES devices(device_id)
@@ -92,6 +100,16 @@ def init_db():
         firmware_version TEXT,
         uptime_seconds INTEGER,
         ip_address TEXT
+    )""")
+
+    # Device configs for remote configuration
+    conn.execute("""CREATE TABLE IF NOT EXISTS device_configs (
+        device_id TEXT PRIMARY KEY,
+        report_interval_ms INTEGER DEFAULT 300000,
+        heartbeat_interval_ms INTEGER DEFAULT 86400000,
+        geolocation_on_boot INTEGER DEFAULT 1,
+        wifi_channels TEXT DEFAULT '1,6,11',
+        updated_at TEXT
     )""")
 
     # Indexes
@@ -111,6 +129,22 @@ def init_db():
         ("devices", "latitude", "REAL"),
         ("devices", "longitude", "REAL"),
         ("heartbeats", "uptime_seconds", "INTEGER"),
+        ("devices", "device_pin", "VARCHAR(4)"),
+        ("readings", "dwell_0_1", "INTEGER DEFAULT 0"),
+        ("readings", "dwell_1_5", "INTEGER DEFAULT 0"),
+        ("readings", "dwell_5_10", "INTEGER DEFAULT 0"),
+        ("readings", "dwell_10plus", "INTEGER DEFAULT 0"),
+        ("readings", "rssi_immediate", "INTEGER DEFAULT 0"),
+        ("readings", "rssi_near", "INTEGER DEFAULT 0"),
+        ("readings", "rssi_far", "INTEGER DEFAULT 0"),
+        ("readings", "rssi_remote", "INTEGER DEFAULT 0"),
+        # BLE device counting (v2.6 / firmware v4.0)
+        ("readings", "ble_impressions", "INTEGER DEFAULT 0"),
+        ("readings", "ble_unique", "INTEGER DEFAULT 0"),
+        ("readings", "ble_apple", "INTEGER DEFAULT 0"),
+        ("readings", "ble_android", "INTEGER DEFAULT 0"),
+        ("readings", "ble_other", "INTEGER DEFAULT 0"),
+        ("readings", "ble_rssi_avg", "INTEGER"),
     ]
 
     for table, column, col_type in migrations:
@@ -192,7 +226,7 @@ def health():
     return jsonify({
         "status": "ok",
         "service": "datajam-nbiot-receiver",
-        "version": "2.4"
+        "version": "2.6"
     })
 
 # ============== Device Endpoints (require device token) ==============
@@ -223,6 +257,26 @@ def receive_reading():
         probe_rssi_min = data.get('probe_rssi_min')
         probe_rssi_max = data.get('probe_rssi_max')
 
+        # Dwell time buckets (v3.0+)
+        dwell_0_1 = data.get('dwell_0_1', 0) or 0
+        dwell_1_5 = data.get('dwell_1_5', 0) or 0
+        dwell_5_10 = data.get('dwell_5_10', 0) or 0
+        dwell_10plus = data.get('dwell_10plus', 0) or 0
+
+        # RSSI distance zones (v3.0+)
+        rssi_immediate = data.get('rssi_immediate', 0) or 0
+        rssi_near = data.get('rssi_near', 0) or 0
+        rssi_far = data.get('rssi_far', 0) or 0
+        rssi_remote = data.get('rssi_remote', 0) or 0
+
+        # BLE device counting fields (v4.0+)
+        ble_impressions = data.get('ble_i', 0) or data.get('ble_impressions', 0) or 0
+        ble_unique = data.get('ble_u', 0) or data.get('ble_unique', 0) or 0
+        ble_apple = data.get('ble_apple', 0) or 0
+        ble_android = data.get('ble_android', 0) or 0
+        ble_other = data.get('ble_other', 0) or 0
+        ble_rssi_avg = data.get('ble_rssi_avg')
+
         # Keep signal_dbm for backwards compatibility in database
         signal_dbm = cell_rssi
 
@@ -238,11 +292,17 @@ def receive_reading():
                                   signal_dbm, battery_pct, firmware_version,
                                   apple_count, android_count, other_count,
                                   probe_rssi_avg, probe_rssi_min, probe_rssi_max,
-                                  cell_rssi, received_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                  cell_rssi, dwell_0_1, dwell_1_5, dwell_5_10, dwell_10plus,
+                                  rssi_immediate, rssi_near, rssi_far, rssi_remote,
+                                  ble_impressions, ble_unique, ble_apple, ble_android, ble_other, ble_rssi_avg,
+                                  received_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (device_id, timestamp, impressions, unique_count, signal_dbm,
               battery_pct, firmware, apple_count, android_count, other_count,
-              probe_rssi_avg, probe_rssi_min, probe_rssi_max, cell_rssi, now))
+              probe_rssi_avg, probe_rssi_min, probe_rssi_max, cell_rssi,
+              dwell_0_1, dwell_1_5, dwell_5_10, dwell_10plus,
+              rssi_immediate, rssi_near, rssi_far, rssi_remote,
+              ble_impressions, ble_unique, ble_apple, ble_android, ble_other, ble_rssi_avg, now))
 
         # Update device last_seen
         conn.execute("""
@@ -257,11 +317,32 @@ def receive_reading():
         rssi_info = ""
         if probe_rssi_avg is not None:
             rssi_info = f" probe_rssi(avg:{probe_rssi_avg} min:{probe_rssi_min} max:{probe_rssi_max})"
+        dwell_info = ""
+        if any([dwell_0_1, dwell_1_5, dwell_5_10, dwell_10plus]):
+            dwell_info = f" dwell(0-1:{dwell_0_1} 1-5:{dwell_1_5} 5-10:{dwell_5_10} 10+:{dwell_10plus})"
+        zone_info = ""
+        if any([rssi_immediate, rssi_near, rssi_far, rssi_remote]):
+            zone_info = f" zones(imm:{rssi_immediate} near:{rssi_near} far:{rssi_far} remote:{rssi_remote})"
+        ble_info = ""
+        if any([ble_impressions, ble_unique]):
+            ble_info = f" BLE(i:{ble_impressions} u:{ble_unique} Apple:{ble_apple} Android:{ble_android} Other:{ble_other})"
         print(f"[READING] {device_id}: {impressions} probes, {unique_count} unique "
               f"(Apple:{apple_count} Android:{android_count} Other:{other_count}) "
-              f"cell_rssi:{cell_rssi}{rssi_info} @ {timestamp}")
+              f"cell_rssi:{cell_rssi}{rssi_info}{dwell_info}{zone_info}{ble_info} @ {timestamp}")
 
-        return jsonify({"status": "ok"}), 201
+        # Check for pending command
+        response = {"status": "ok"}
+
+        device_row = conn.execute("SELECT pending_command FROM devices WHERE device_id = ?", (device_id,)).fetchone()
+        if device_row and device_row['pending_command']:
+            command = device_row['pending_command']
+            response['command'] = command
+            # Clear the pending command
+            conn.execute("UPDATE devices SET pending_command = NULL WHERE device_id = ?", (device_id,))
+            conn.commit()
+            print(f"[COMMAND] Sending to {device_id}: {command}", flush=True)
+
+        return jsonify(response), 201
 
     except Exception as e:
         print(f"[ERROR] receive_reading: {e}")
@@ -306,10 +387,106 @@ def heartbeat():
         uptime_str = f"{uptime_seconds}s" if uptime_seconds is not None else "N/A"
         print(f"[HEARTBEAT] {device_id} v{firmware} uptime:{uptime_str} cell:{signal_dbm}dBm", flush=True)
 
-        return jsonify({"status": "ok", "server_time": now}), 200
+        # Check for pending command
+        response = {"status": "ok", "server_time": now}
+
+        device_row = conn.execute("SELECT pending_command FROM devices WHERE device_id = ?", (device_id,)).fetchone()
+        if device_row and device_row['pending_command']:
+            command = device_row['pending_command']
+            response['command'] = command
+            # Clear the pending command
+            conn.execute("UPDATE devices SET pending_command = NULL WHERE device_id = ?", (device_id,))
+            conn.commit()
+            print(f"[COMMAND] Sending to {device_id}: {command}", flush=True)
+
+        return jsonify(response), 200
 
     except Exception as e:
         print(f"[ERROR] heartbeat: {e}", flush=True)
+        return jsonify({"error": str(e)}), 500
+
+# ============== Remote Configuration ==============
+
+@app.route("/api/config/<device_id>", methods=["GET"])
+@require_device_auth
+def get_device_config(device_id):
+    """Return device configuration for remote config pull."""
+    try:
+        conn = get_db()
+
+        # Check device exists
+        device = conn.execute(
+            "SELECT device_id FROM devices WHERE device_id = ?",
+            (device_id,)
+        ).fetchone()
+
+        if not device:
+            return jsonify({"error": "Device not found"}), 404
+
+        # Get device-specific config or return defaults
+        config = conn.execute(
+            "SELECT * FROM device_configs WHERE device_id = ?",
+            (device_id,)
+        ).fetchone()
+
+        if config:
+            response = {
+                "config_version": 1,
+                "report_interval_ms": config['report_interval_ms'],
+                "heartbeat_interval_ms": config['heartbeat_interval_ms'],
+                "geolocation_on_boot": bool(config['geolocation_on_boot']),
+                "wifi_channels": [int(c) for c in config['wifi_channels'].split(',')],
+                "updated_at": config['updated_at']
+            }
+        else:
+            # Return defaults
+            response = {
+                "config_version": 1,
+                "report_interval_ms": 300000,      # 5 minutes
+                "heartbeat_interval_ms": 86400000, # 24 hours
+                "geolocation_on_boot": True,
+                "wifi_channels": [1, 6, 11],
+                "updated_at": None
+            }
+
+        print(f"[CONFIG] {device_id}: interval={response['report_interval_ms']}ms")
+        return jsonify(response), 200
+
+    except Exception as e:
+        print(f"[ERROR] get_device_config: {e}", flush=True)
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/config/<device_id>", methods=["PUT"])
+@require_admin
+def update_device_config(device_id):
+    """Update device configuration (admin only)."""
+    try:
+        data = request.get_json()
+        conn = get_db()
+
+        # Upsert config
+        now = datetime.now(timezone.utc).isoformat()
+        wifi_channels = ','.join(str(c) for c in data.get('wifi_channels', [1, 6, 11]))
+
+        conn.execute("""
+            INSERT OR REPLACE INTO device_configs
+            (device_id, report_interval_ms, heartbeat_interval_ms, geolocation_on_boot, wifi_channels, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (
+            device_id,
+            data.get('report_interval_ms', 300000),
+            data.get('heartbeat_interval_ms', 86400000),
+            1 if data.get('geolocation_on_boot', True) else 0,
+            wifi_channels,
+            now
+        ))
+        conn.commit()
+
+        print(f"[CONFIG] Updated config for {device_id}")
+        return jsonify({"status": "ok", "updated_at": now}), 200
+
+    except Exception as e:
+        print(f"[ERROR] update_device_config: {e}", flush=True)
         return jsonify({"error": str(e)}), 500
 
 # ============== Geolocation Endpoints ==============
@@ -504,6 +681,133 @@ def update_device_status(device_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route("/api/device/<device_id>/command", methods=["POST"])
+@require_admin
+def queue_command(device_id):
+    """Queue a command for a device (executed on next heartbeat)."""
+    try:
+        data = request.get_json()
+        command = data.get('command')
+
+        valid_commands = ['reboot', 'send_now', 'geolocate']
+        if command not in valid_commands:
+            return jsonify({"error": f"Invalid command. Use: {', '.join(valid_commands)}"}), 400
+
+        conn = get_db()
+
+        # Check device exists
+        device = conn.execute("SELECT device_id FROM devices WHERE device_id = ?", (device_id,)).fetchone()
+        if not device:
+            return jsonify({"error": "Device not found"}), 404
+
+        # Queue the command
+        conn.execute("UPDATE devices SET pending_command = ? WHERE device_id = ?", (command, device_id))
+        conn.commit()
+
+        print(f"[COMMAND] Queued for {device_id}: {command}", flush=True)
+
+        return jsonify({"status": "queued", "device_id": device_id, "command": command}), 200
+
+    except Exception as e:
+        print(f"[ERROR] queue_command: {e}", flush=True)
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/device/<device_id>/location", methods=["PUT"])
+@require_admin
+def update_device_location(device_id):
+    """Manually set device location (lat/lng)."""
+    try:
+        data = request.get_json()
+        lat = data.get('latitude')
+        lng = data.get('longitude')
+        location_name = data.get('location_name')
+
+        if lat is None or lng is None:
+            return jsonify({"error": "latitude and longitude are required"}), 400
+
+        # Validate coordinates
+        try:
+            lat = float(lat)
+            lng = float(lng)
+            if not (-90 <= lat <= 90) or not (-180 <= lng <= 180):
+                raise ValueError("Out of range")
+        except (ValueError, TypeError):
+            return jsonify({"error": "Invalid coordinates"}), 400
+
+        conn = get_db()
+
+        # Check device exists
+        device = conn.execute("SELECT device_id FROM devices WHERE device_id = ?", (device_id,)).fetchone()
+        if not device:
+            return jsonify({"error": "Device not found"}), 404
+
+        # Determine timezone from coordinates
+        try:
+            timezone_str = tf.timezone_at(lat=lat, lng=lng)
+        except:
+            timezone_str = "UTC"
+
+        # Update location
+        if location_name:
+            conn.execute("""
+                UPDATE devices SET latitude = ?, longitude = ?, timezone = ?, location_name = ?
+                WHERE device_id = ?
+            """, (lat, lng, timezone_str, location_name, device_id))
+        else:
+            conn.execute("""
+                UPDATE devices SET latitude = ?, longitude = ?, timezone = ?
+                WHERE device_id = ?
+            """, (lat, lng, timezone_str, device_id))
+        conn.commit()
+
+        print(f"[LOCATION] Manual update {device_id}: lat={lat}, lng={lng}, tz={timezone_str}", flush=True)
+
+        return jsonify({
+            "status": "ok",
+            "device_id": device_id,
+            "latitude": lat,
+            "longitude": lng,
+            "timezone": timezone_str
+        }), 200
+
+    except Exception as e:
+        print(f"[ERROR] update_device_location: {e}", flush=True)
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/device/<device_id>/pin", methods=["PUT"])
+@require_admin
+def update_device_pin(device_id):
+    """Set device PIN for customer activation portal."""
+    try:
+        data = request.get_json()
+        pin = data.get('pin')
+
+        if not pin or len(pin) != 4 or not pin.isdigit():
+            return jsonify({"error": "PIN must be exactly 4 digits"}), 400
+
+        conn = get_db()
+
+        # Check device exists
+        device = conn.execute("SELECT device_id FROM devices WHERE device_id = ?", (device_id,)).fetchone()
+        if not device:
+            return jsonify({"error": "Device not found"}), 404
+
+        # Update PIN
+        conn.execute("UPDATE devices SET device_pin = ? WHERE device_id = ?", (pin, device_id))
+        conn.commit()
+
+        print(f"[PIN] Set PIN for {device_id}", flush=True)
+
+        return jsonify({
+            "success": True,
+            "device_id": device_id,
+            "message": "PIN updated successfully"
+        }), 200
+
+    except Exception as e:
+        print(f"[ERROR] update_device_pin: {e}", flush=True)
+        return jsonify({"error": str(e)}), 500
+
 @app.route("/api/devices")
 @require_admin
 def list_devices():
@@ -512,7 +816,7 @@ def list_devices():
     rows = conn.execute("""
         SELECT device_id, project_name, location_name, timezone, firmware_version,
                status, registered_at, last_seen_at, last_signal_dbm, last_battery_pct,
-               latitude, longitude
+               latitude, longitude, device_pin
         FROM devices ORDER BY device_id
     """).fetchall()
 
@@ -582,7 +886,7 @@ def get_heartbeats():
 
 if __name__ == "__main__":
     init_db()
-    print("DataJam NB-IoT Receiver v2.4 starting on port 5000...")
-    print("Features: Device auth, ISO timestamps, Apple/Android/Other classification, extended RSSI metrics, WiFi geolocation, heartbeat with uptime")
+    print("DataJam NB-IoT Receiver v2.6 starting on port 5000...")
+    print("Features: Device auth, ISO timestamps, Apple/Android/Other classification, extended RSSI metrics, WiFi geolocation, heartbeat with uptime, device PIN, BLE counting")
     print(f"Admin key: {ADMIN_KEY}")
     app.run(host="0.0.0.0", port=5000)

@@ -38,29 +38,52 @@
 #include <WebServer.h>
 #include <Update.h>
 #include <FastLED.h>
+#include <NimBLEDevice.h>
 #include <set>
+#include <map>
 #include <time.h>
+#include <esp_task_wdt.h>
+
+// ESP-IDF OTA rollback protection
+extern "C" {
+    #include "esp_ota_ops.h"
+}
 
 // =============================================================================
-// Device Type Classification
+// Device Type Classification (BLE Manufacturer ID based)
 // =============================================================================
 
 enum DeviceType { DEVICE_APPLE, DEVICE_ANDROID, DEVICE_OTHER };
 
-// Heuristic detection from randomized MAC patterns
-static DeviceType classifyDevice(const uint8_t* mac) {
-    uint8_t firstByte = mac[0];
-    uint8_t secondNibble = firstByte & 0x0F;
+// BLE Manufacturer IDs for device classification
+// These are registered with Bluetooth SIG and reliably identify device manufacturers
+#define BLE_MANUFACTURER_APPLE       0x004C  // Apple Inc.
+#define BLE_MANUFACTURER_GOOGLE      0x00E0  // Google (Fast Pair)
+#define BLE_MANUFACTURER_SAMSUNG     0x0075  // Samsung Electronics
+#define BLE_MANUFACTURER_XIAOMI      0x0310  // Xiaomi Inc.
+#define BLE_MANUFACTURER_HUAWEI      0x0157  // Huawei Technologies
+#define BLE_MANUFACTURER_OPPO        0x03DA  // OPPO
+#define BLE_MANUFACTURER_ONEPLUS     0x03E5  // OnePlus (shared with OPPO)
+#define BLE_MANUFACTURER_REALME      0x0488  // Realme
 
-    // Apple randomized MACs commonly use: x2, x6, xA, xE patterns
-    if (secondNibble == 0x02 || secondNibble == 0x06 ||
-        secondNibble == 0x0A || secondNibble == 0x0E) {
-        return DEVICE_APPLE;
+// Classify device based on BLE manufacturer ID
+static DeviceType classifyBleDevice(uint16_t manufacturerId) {
+    switch (manufacturerId) {
+        case BLE_MANUFACTURER_APPLE:
+            return DEVICE_APPLE;
+
+        case BLE_MANUFACTURER_GOOGLE:
+        case BLE_MANUFACTURER_SAMSUNG:
+        case BLE_MANUFACTURER_XIAOMI:
+        case BLE_MANUFACTURER_HUAWEI:
+        case BLE_MANUFACTURER_OPPO:
+        case BLE_MANUFACTURER_ONEPLUS:
+        case BLE_MANUFACTURER_REALME:
+            return DEVICE_ANDROID;
+
+        default:
+            return DEVICE_OTHER;
     }
-
-    // Android uses more varied patterns - detect by exclusion
-    // If it's randomized but not Apple pattern, likely Android
-    return DEVICE_ANDROID;
 }
 
 // =============================================================================
@@ -71,7 +94,7 @@ static DeviceType classifyDevice(const uint8_t* mac) {
 #include "device_config.h"
 
 // Firmware version
-static const char* FIRMWARE_VERSION = "2.9";
+static const char* FIRMWARE_VERSION = "4.0";
 
 // SSL Configuration (disabled for now - AT+CCHOPEN failing)
 #define USE_SSL false
@@ -96,6 +119,12 @@ static const uint32_t NETWORK_INIT_TIMEOUT_MS = 120000;
 static const uint8_t WIFI_CHANNELS[] = {1, 6, 11};
 static const uint8_t WIFI_CHANNEL_COUNT = 3;
 static const uint32_t CHANNEL_HOP_INTERVAL_MS = 3000;  // 3 seconds per channel
+
+// BLE/WiFi time-slicing configuration
+// ESP32 shares radio between WiFi and BLE, so we alternate
+static const uint32_t WIFI_SCAN_DURATION_MS = 12000;   // 12 seconds WiFi promiscuous mode
+static const uint32_t BLE_SCAN_DURATION_MS = 3000;     // 3 seconds BLE scanning
+// 80/20 split maintains WiFi probe accuracy while adding BLE capability
 
 // Maximum unique MACs to track per period (memory constraint)
 #define MAX_UNIQUE_MACS 500
@@ -173,21 +202,61 @@ static bool g_ledBlinkState = false;
 // UART for modem
 HardwareSerial ModemSerial(1);
 
-// Probe counting state
+// WiFi probe counting state
 static volatile uint32_t g_totalProbes = 0;
 static volatile uint32_t g_filteredStatic = 0;  // Count of rejected static MACs
-static volatile uint32_t g_appleCount = 0;      // Apple device count
-static volatile uint32_t g_androidCount = 0;    // Android device count
-static volatile uint32_t g_otherCount = 0;      // Other device count (non-Apple, non-Android)
 static std::set<uint64_t> g_uniqueMacs;
 static std::set<uint64_t> g_uniqueAPs;          // Unique access points (BSSIDs)
 static portMUX_TYPE g_probeMux = portMUX_INITIALIZER_UNLOCKED;
+
+// BLE counting state - reliable OS detection via manufacturer IDs
+static volatile uint32_t g_bleImpressions = 0;  // Total BLE advertisements
+static volatile uint32_t g_bleAppleCount = 0;   // Apple devices (0x004C)
+static volatile uint32_t g_bleAndroidCount = 0; // Android devices (Google, Samsung, etc.)
+static volatile uint32_t g_bleOtherCount = 0;   // Other BLE devices
+static volatile int32_t g_bleRssiSum = 0;       // Sum for average calculation
+static volatile uint32_t g_bleRssiCount = 0;    // Count for average
+static std::set<uint64_t> g_bleUniqueMacs;      // Unique BLE MACs per minute
+static portMUX_TYPE g_bleMux = portMUX_INITIALIZER_UNLOCKED;
+
+// Radio time-slicing state
+enum RadioMode { RADIO_WIFI, RADIO_BLE };
+static RadioMode g_radioMode = RADIO_WIFI;
+static uint32_t g_lastRadioSwitch = 0;
+static bool g_bleInitialized = false;
 
 // Probe RSSI tracking (WiFi signal strength from phones)
 static volatile int32_t g_probeRssiSum = 0;
 static volatile int32_t g_probeRssiMin = 0;      // Min RSSI (closest device)
 static volatile int32_t g_probeRssiMax = -999;   // Max RSSI (farthest device)
 static volatile uint32_t g_probeRssiCount = 0;
+
+// Dwell time tracking - tracks how long each device stays in range
+// Key: MAC address (48 bits), Value: first minute seen in this period
+static std::map<uint64_t, uint16_t> g_dwellFirstSeen;  // MAC -> first minute
+static std::map<uint64_t, uint16_t> g_dwellLastSeen;   // MAC -> last minute
+static const size_t MAX_DWELL_ENTRIES = 200;
+
+// Dwell time bucket counters (calculated at report time)
+// These track engagement levels:
+// - 0-1 min: Drive-by traffic (saw device in only 1 minute)
+// - 1-5 min: Brief stop (2-5 distinct minutes)
+// - 5-10 min: Engaged visitor
+// - 10+ min: Highly engaged (lingered 10+ minutes)
+static volatile uint32_t g_dwell_0_1 = 0;
+static volatile uint32_t g_dwell_1_5 = 0;
+static volatile uint32_t g_dwell_5_10 = 0;
+static volatile uint32_t g_dwell_10plus = 0;
+
+// RSSI distance zone counters (proves viewability)
+// - Immediate: > -50 dBm (within ~2m, very close)
+// - Near: -50 to -65 dBm (~2-5m, clearly visible)
+// - Far: -65 to -80 dBm (~5-15m, in vicinity)
+// - Remote: < -80 dBm (>15m, passing by)
+static volatile uint32_t g_rssi_immediate = 0;
+static volatile uint32_t g_rssi_near = 0;
+static volatile uint32_t g_rssi_far = 0;
+static volatile uint32_t g_rssi_remote = 0;
 
 // Timing
 static uint32_t g_lastReportTime = 0;
@@ -198,21 +267,70 @@ static uint32_t g_bootTimestamp = 0;  // Pseudo-timestamp from boot
 static uint8_t g_currentChannelIndex = 0;
 static uint32_t g_lastChannelHop = 0;
 
-// Cached reading for retry
+// OTA rollback protection - confirms new firmware works after first successful send
+static bool g_otaConfirmed = false;
+
+// Cached reading structure for offline resilience
 struct CachedReading {
     bool valid;
     char timestamp[25];
     uint32_t impressions;
     uint32_t unique;
-    uint32_t apple;
-    uint32_t android;
-    uint32_t other;
     int probeRssiAvg;
     int probeRssiMin;
     int probeRssiMax;
     int cellRssi;
+    uint32_t dwell_0_1;
+    uint32_t dwell_1_5;
+    uint32_t dwell_5_10;
+    uint32_t dwell_10plus;
+    uint32_t rssi_immediate;
+    uint32_t rssi_near;
+    uint32_t rssi_far;
+    uint32_t rssi_remote;
+    // BLE counting fields (v4.0)
+    uint32_t bleImpressions;
+    uint32_t bleUnique;
+    uint32_t bleApple;
+    uint32_t bleAndroid;
+    uint32_t bleOther;
+    int bleRssiAvg;
 };
-static CachedReading g_cachedReading = {false, "", 0, 0, 0, 0, 0, 0, 0, 0, 0};
+
+// Circular buffer for cached readings (48hr at 30-min intervals, or 8hr at 5-min)
+#define MAX_CACHED_READINGS 96
+static CachedReading g_cacheBuffer[MAX_CACHED_READINGS];
+static uint8_t g_cacheHead = 0;   // Next write position
+static uint8_t g_cacheTail = 0;   // Next read position
+static uint8_t g_cacheCount = 0;  // Number of valid entries
+
+// Cache a reading for later retry (returns true if cached, false if full)
+static bool cacheReading(const CachedReading& reading) {
+    if (g_cacheCount >= MAX_CACHED_READINGS) {
+        Serial.println("[CACHE] Buffer full, dropping oldest reading");
+        // Drop oldest by advancing tail
+        g_cacheTail = (g_cacheTail + 1) % MAX_CACHED_READINGS;
+        g_cacheCount--;
+    }
+    g_cacheBuffer[g_cacheHead] = reading;
+    g_cacheBuffer[g_cacheHead].valid = true;
+    g_cacheHead = (g_cacheHead + 1) % MAX_CACHED_READINGS;
+    g_cacheCount++;
+    Serial.printf("[CACHE] Cached reading (%d/%d slots used)\n", g_cacheCount, MAX_CACHED_READINGS);
+    return true;
+}
+
+// Pop oldest cached reading (returns true if found, false if empty)
+static bool popCachedReading(CachedReading* reading) {
+    if (g_cacheCount == 0) {
+        return false;
+    }
+    *reading = g_cacheBuffer[g_cacheTail];
+    g_cacheBuffer[g_cacheTail].valid = false;
+    g_cacheTail = (g_cacheTail + 1) % MAX_CACHED_READINGS;
+    g_cacheCount--;
+    return true;
+}
 
 // Network state
 static bool g_networkReady = false;
@@ -221,6 +339,9 @@ static bool g_lastSendSuccess = false;
 
 // Geolocation state - flag to send once network connects
 static bool g_geolocationPending = false;
+
+// Time sync state - set true once time is synced from backend
+static bool g_timeSynced = false;
 
 // OTA state
 static bool g_otaRequested = false;
@@ -450,8 +571,8 @@ static void IRAM_ATTR wifiProbeCounterCallback(void* buf, wifi_promiscuous_pkt_t
     }
 #endif
 
-    // Classify device type (Apple vs Android)
-    DeviceType deviceType = classifyDevice(srcMac);
+    // Note: WiFi probe requests don't reliably indicate device type
+    // OS classification now done via BLE manufacturer IDs
 
     // Convert MAC to uint64_t for set storage
     uint64_t macVal = 0;
@@ -473,14 +594,6 @@ static void IRAM_ATTR wifiProbeCounterCallback(void* buf, wifi_promiscuous_pkt_t
     if (g_uniqueMacs.size() < MAX_UNIQUE_MACS) {
         g_uniqueMacs.insert(dedupKey);  // Dedupes per MAC per minute
     }
-    // Count by device type
-    if (deviceType == DEVICE_APPLE) {
-        g_appleCount++;
-    } else if (deviceType == DEVICE_ANDROID) {
-        g_androidCount++;
-    } else {
-        g_otherCount++;
-    }
     // Track probe RSSI stats
     g_probeRssiSum += probeRssi;
     g_probeRssiCount++;
@@ -489,6 +602,29 @@ static void IRAM_ATTR wifiProbeCounterCallback(void* buf, wifi_promiscuous_pkt_t
     }
     if (probeRssi > g_probeRssiMax) {
         g_probeRssiMax = probeRssi;
+    }
+    // Categorize by RSSI distance zone
+    if (probeRssi > -50) {
+        g_rssi_immediate++;  // Very close (<2m)
+    } else if (probeRssi > -65) {
+        g_rssi_near++;       // Near (2-5m)
+    } else if (probeRssi > -80) {
+        g_rssi_far++;        // Far (5-15m)
+    } else {
+        g_rssi_remote++;     // Remote (>15m)
+    }
+    // Track dwell time - record first and last minute each MAC was seen
+    uint16_t minuteVal = (uint16_t)(currentMinute & 0xFFFF);
+    if (g_dwellFirstSeen.size() < MAX_DWELL_ENTRIES) {
+        auto it = g_dwellFirstSeen.find(macVal);
+        if (it == g_dwellFirstSeen.end()) {
+            // First time seeing this MAC in this period
+            g_dwellFirstSeen[macVal] = minuteVal;
+            g_dwellLastSeen[macVal] = minuteVal;
+        } else {
+            // Update last seen time
+            g_dwellLastSeen[macVal] = minuteVal;
+        }
     }
     portEXIT_CRITICAL(&g_probeMux);
 }
@@ -532,6 +668,155 @@ static void updateChannelHop() {
         g_lastChannelHop = now;
         g_currentChannelIndex = (g_currentChannelIndex + 1) % WIFI_CHANNEL_COUNT;
         esp_wifi_set_channel(WIFI_CHANNELS[g_currentChannelIndex], WIFI_SECOND_CHAN_NONE);
+    }
+}
+
+// =============================================================================
+// BLE Passive Scanning - Accurate OS Detection via Manufacturer IDs
+// =============================================================================
+
+// NimBLE advertised device callback
+class BleAdvertisedDeviceCallbacks : public NimBLEAdvertisedDeviceCallbacks {
+    void onResult(NimBLEAdvertisedDevice* advertisedDevice) override {
+        // Get address (check for randomized MAC)
+        NimBLEAddress addr = advertisedDevice->getAddress();
+        uint8_t addrType = addr.getType();
+
+        // Only count randomized addresses (privacy filter)
+        // Type 1 = Random Address, Type 0 = Public Address
+        if (addrType == 0) {
+            // Public (static) address - skip for privacy
+            return;
+        }
+
+        // Get MAC as bytes
+        const uint8_t* macBytes = addr.getNative();
+        uint64_t macVal = 0;
+        for (int i = 0; i < 6; i++) {
+            macVal = (macVal << 8) | macBytes[i];
+        }
+
+        // Per-minute deduplication (same as WiFi probes)
+        uint32_t currentMinute = millis() / 60000;
+        uint64_t dedupKey = macVal | ((uint64_t)(currentMinute & 0xFFFF) << 48);
+
+        // Get signal strength
+        int rssi = advertisedDevice->getRSSI();
+
+        // Classify by manufacturer ID
+        DeviceType deviceType = DEVICE_OTHER;
+        if (advertisedDevice->haveManufacturerData()) {
+            std::string mfgData = advertisedDevice->getManufacturerData();
+            if (mfgData.length() >= 2) {
+                // Manufacturer ID is little-endian first 2 bytes
+                uint16_t mfgId = ((uint8_t)mfgData[1] << 8) | (uint8_t)mfgData[0];
+                deviceType = classifyBleDevice(mfgId);
+            }
+        }
+
+        // Update counters with mutex protection
+        portENTER_CRITICAL(&g_bleMux);
+        g_bleImpressions++;
+
+        // Track unique per minute
+        if (g_bleUniqueMacs.size() < MAX_UNIQUE_MACS) {
+            g_bleUniqueMacs.insert(dedupKey);
+        }
+
+        // Count by device type
+        switch (deviceType) {
+            case DEVICE_APPLE:
+                g_bleAppleCount++;
+                break;
+            case DEVICE_ANDROID:
+                g_bleAndroidCount++;
+                break;
+            default:
+                g_bleOtherCount++;
+                break;
+        }
+
+        // Track RSSI
+        g_bleRssiSum += rssi;
+        g_bleRssiCount++;
+        portEXIT_CRITICAL(&g_bleMux);
+    }
+};
+
+static NimBLEScan* g_pBleScan = nullptr;
+static BleAdvertisedDeviceCallbacks g_bleCallbacks;
+
+static void initBle() {
+    if (g_bleInitialized) return;
+
+    Serial.println("[BLE] Initializing NimBLE...");
+
+    // Initialize NimBLE in passive mode (no transmit)
+    NimBLEDevice::init("");
+
+    // Get scan object
+    g_pBleScan = NimBLEDevice::getScan();
+    g_pBleScan->setAdvertisedDeviceCallbacks(&g_bleCallbacks, false);
+    g_pBleScan->setActiveScan(false);  // Passive scan - no scan requests
+    g_pBleScan->setInterval(100);      // 100ms scan interval
+    g_pBleScan->setWindow(99);         // 99ms scan window (nearly continuous)
+    g_pBleScan->setMaxResults(0);      // Don't store results, use callback
+
+    g_bleInitialized = true;
+    Serial.println("[BLE] NimBLE initialized (passive scan mode)");
+}
+
+static void startBleScan() {
+    if (!g_bleInitialized) {
+        initBle();
+    }
+
+    if (g_pBleScan && !g_pBleScan->isScanning()) {
+        // Start scanning for BLE_SCAN_DURATION_MS (non-blocking)
+        g_pBleScan->start(BLE_SCAN_DURATION_MS / 1000, false);
+        Serial.println("[BLE] Scanning started");
+    }
+}
+
+static void stopBleScan() {
+    if (g_pBleScan && g_pBleScan->isScanning()) {
+        g_pBleScan->stop();
+        Serial.println("[BLE] Scanning stopped");
+    }
+}
+
+// Radio time-slicing: switches between WiFi and BLE modes
+static void updateRadioMode() {
+    uint32_t now = millis();
+    uint32_t elapsed = now - g_lastRadioSwitch;
+
+    if (g_radioMode == RADIO_WIFI) {
+        // Currently in WiFi mode - check if time to switch to BLE
+        if (elapsed >= WIFI_SCAN_DURATION_MS) {
+            g_lastRadioSwitch = now;
+            g_radioMode = RADIO_BLE;
+
+            // Stop WiFi promiscuous mode
+            stopProbeCapture();
+
+            // Start BLE scanning
+            startBleScan();
+        } else {
+            // Still in WiFi mode - do channel hopping
+            updateChannelHop();
+        }
+    } else {
+        // Currently in BLE mode - check if time to switch back to WiFi
+        if (elapsed >= BLE_SCAN_DURATION_MS) {
+            g_lastRadioSwitch = now;
+            g_radioMode = RADIO_WIFI;
+
+            // Stop BLE scanning
+            stopBleScan();
+
+            // Resume WiFi promiscuous mode
+            startProbeCapture();
+        }
     }
 }
 
@@ -853,27 +1138,42 @@ static bool checkOtaTrigger(const char* response) {
 
 // Send reading to backend via HTTP POST over TCP
 static bool sendReading(const char* timestamp, uint32_t impressions, uint32_t unique,
-                        uint32_t apple, uint32_t android, uint32_t other,
-                        int probeRssiAvg, int probeRssiMin, int probeRssiMax, int cellRssi) {
-    Serial.printf("[HTTP] Sending: t=%s, i=%lu, u=%lu, apple=%lu, android=%lu, other=%lu\n",
-                  timestamp, impressions, unique, apple, android, other);
+                        int probeRssiAvg, int probeRssiMin, int probeRssiMax, int cellRssi,
+                        uint32_t dwell_0_1, uint32_t dwell_1_5, uint32_t dwell_5_10, uint32_t dwell_10plus,
+                        uint32_t rssi_immediate, uint32_t rssi_near, uint32_t rssi_far, uint32_t rssi_remote,
+                        uint32_t bleImpressions, uint32_t bleUnique,
+                        uint32_t bleApple, uint32_t bleAndroid, uint32_t bleOther, int bleRssiAvg) {
+    Serial.printf("[HTTP] WiFi: t=%s, i=%lu, u=%lu\n", timestamp, impressions, unique);
     Serial.printf("[HTTP]   probe_rssi: avg=%d min=%d max=%d, cell_rssi=%d\n",
                   probeRssiAvg, probeRssiMin, probeRssiMax, cellRssi);
+    Serial.printf("[HTTP]   dwell: 0-1=%lu, 1-5=%lu, 5-10=%lu, 10+=%lu\n",
+                  dwell_0_1, dwell_1_5, dwell_5_10, dwell_10plus);
+    Serial.printf("[HTTP]   rssi_zones: imm=%lu, near=%lu, far=%lu, remote=%lu\n",
+                  rssi_immediate, rssi_near, rssi_far, rssi_remote);
+    Serial.printf("[HTTP] BLE: i=%lu, u=%lu, Apple=%lu, Android=%lu, Other=%lu, rssi_avg=%d\n",
+                  bleImpressions, bleUnique, bleApple, bleAndroid, bleOther, bleRssiAvg);
 
     ledSetStatus(LED_STATUS_TRANSMITTING);  // Orange pulsing during send
 
-    // Build JSON payload with device type breakdown and dual signal tracking
-    char jsonPayload[300];
+    // Build JSON payload with WiFi probes + BLE device counts
+    // Note: WiFi apple/android/other removed (unreliable), BLE provides accurate OS detection
+    char jsonPayload[768];
     snprintf(jsonPayload, sizeof(jsonPayload),
-             "{\"d\":\"%s\",\"t\":\"%s\",\"i\":%lu,\"u\":%lu,\"apple\":%lu,\"android\":%lu,\"other\":%lu,"
-             "\"probe_rssi_avg\":%d,\"probe_rssi_min\":%d,\"probe_rssi_max\":%d,\"cell_rssi\":%d}",
-             DEVICE_ID, timestamp, impressions, unique, apple, android, other,
-             probeRssiAvg, probeRssiMin, probeRssiMax, cellRssi);
+             "{\"d\":\"%s\",\"t\":\"%s\",\"i\":%lu,\"u\":%lu,"
+             "\"probe_rssi_avg\":%d,\"probe_rssi_min\":%d,\"probe_rssi_max\":%d,\"cell_rssi\":%d,"
+             "\"dwell_0_1\":%lu,\"dwell_1_5\":%lu,\"dwell_5_10\":%lu,\"dwell_10plus\":%lu,"
+             "\"rssi_immediate\":%lu,\"rssi_near\":%lu,\"rssi_far\":%lu,\"rssi_remote\":%lu,"
+             "\"ble_i\":%lu,\"ble_u\":%lu,\"ble_apple\":%lu,\"ble_android\":%lu,\"ble_other\":%lu,\"ble_rssi_avg\":%d}",
+             DEVICE_ID, timestamp, impressions, unique,
+             probeRssiAvg, probeRssiMin, probeRssiMax, cellRssi,
+             dwell_0_1, dwell_1_5, dwell_5_10, dwell_10plus,
+             rssi_immediate, rssi_near, rssi_far, rssi_remote,
+             bleImpressions, bleUnique, bleApple, bleAndroid, bleOther, bleRssiAvg);
 
     size_t jsonLen = strlen(jsonPayload);
 
     // Build HTTP request
-    char httpRequest[512];
+    char httpRequest[900];
     int httpLen = snprintf(httpRequest, sizeof(httpRequest),
         "POST %s HTTP/1.1\r\n"
         "Host: %s:%d\r\n"
@@ -957,6 +1257,43 @@ static bool sendReading(const char* timestamp, uint32_t impressions, uint32_t un
         g_otaRequested = true;
     }
 
+    // Check for remote command in response (same as heartbeat)
+    if (success) {
+        char* jsonBody = strstr(g_atBuffer, "\r\n\r\n");
+        if (!jsonBody) jsonBody = strstr(g_atBuffer, "{"); // Fallback
+
+        if (jsonBody) {
+            char* cmdStart = strstr(jsonBody, "\"command\":\"");
+            if (cmdStart) {
+                cmdStart += 11; // Skip past "command":"
+                char* cmdEnd = strchr(cmdStart, '"');
+
+                if (cmdEnd && (cmdEnd - cmdStart) < 31) { // Bounds check
+                    char command[32] = {0};
+                    size_t cmdLen = cmdEnd - cmdStart;
+                    memcpy(command, cmdStart, cmdLen);
+
+                    Serial.printf("[COMMAND] Received in reading response: %s\n", command);
+
+                    if (strcmp(command, "reboot") == 0) {
+                        Serial.println("[COMMAND] Reboot scheduled");
+                        atSendCommand("AT+CIPCLOSE=0", "OK", 5000);
+                        delay(1000);
+                        ESP.restart();
+                    } else if (strcmp(command, "send_now") == 0) {
+                        Serial.println("[COMMAND] Force send requested");
+                        g_forceSendRequested = true;
+                    } else if (strcmp(command, "geolocate") == 0) {
+                        Serial.println("[COMMAND] Remote geolocation requested");
+                        g_geolocationPending = true;
+                    } else {
+                        Serial.printf("[COMMAND] Unknown command: %s\n", command);
+                    }
+                }
+            }
+        }
+    }
+
     // Close TCP connection
     atSendCommand("AT+CIPCLOSE=0", "OK", 5000);
 
@@ -964,6 +1301,15 @@ static bool sendReading(const char* timestamp, uint32_t impressions, uint32_t un
         Serial.println("[HTTP] Success");
         g_lastSendSuccess = true;
         ledSetStatus(LED_STATUS_SEND_SUCCESS);  // Green for 3 sec, then cyan
+
+        // OTA rollback protection: After first successful send, mark this
+        // firmware as valid. If device had been flashed with bad firmware,
+        // ESP32 would have rebooted back to previous working firmware already.
+        if (!g_otaConfirmed) {
+            esp_ota_mark_app_valid_cancel_rollback();
+            g_otaConfirmed = true;
+            Serial.println("[OTA] Firmware confirmed valid - rollback disabled");
+        }
     } else {
         Serial.println("[HTTP] Response not OK");
         g_lastSendSuccess = false;
@@ -1076,11 +1422,46 @@ static bool sendHeartbeat() {
     if (success) {
         Serial.println("[HEARTBEAT] Success");
 
-        // Check for remote command in response (look in JSON body after headers)
+        // Parse server_time for timestamp synchronization
         char* jsonBody = strstr(g_atBuffer, "\r\n\r\n");
-        if (!jsonBody) jsonBody = strstr(g_atBuffer, "{"); // Fallback
+        if (!jsonBody) jsonBody = strstr(g_atBuffer, "{");
 
         if (jsonBody) {
+            // Look for server_time in response (ISO 8601 format)
+            char* timeStart = strstr(jsonBody, "\"server_time\":\"");
+            if (timeStart) {
+                timeStart += 15;  // Skip past "server_time":"
+                char* timeEnd = strchr(timeStart, '"');
+                if (timeEnd && (timeEnd - timeStart) < 30) {
+                    char serverTime[32] = {0};
+                    memcpy(serverTime, timeStart, timeEnd - timeStart);
+
+                    // Parse ISO 8601: "2026-01-26T12:30:00+00:00" or "2026-01-26T12:30:00.123456+00:00"
+                    int year, month, day, hour, minute, second;
+                    if (sscanf(serverTime, "%d-%d-%dT%d:%d:%d", &year, &month, &day, &hour, &minute, &second) == 6) {
+                        // Convert to Unix timestamp
+                        struct tm timeinfo = {0};
+                        timeinfo.tm_year = year - 1900;
+                        timeinfo.tm_mon = month - 1;
+                        timeinfo.tm_mday = day;
+                        timeinfo.tm_hour = hour;
+                        timeinfo.tm_min = minute;
+                        timeinfo.tm_sec = second;
+
+                        time_t serverEpoch = mktime(&timeinfo);
+                        uint32_t deviceUptime = millis() / 1000;
+                        g_bootTimestamp = (uint32_t)serverEpoch - deviceUptime;
+
+                        if (!g_timeSynced) {
+                            Serial.printf("[TIME] Synced from server: %s\n", serverTime);
+                            Serial.printf("[TIME] Boot timestamp set to: %lu\n", g_bootTimestamp);
+                            g_timeSynced = true;
+                        }
+                    }
+                }
+            }
+
+            // Check for remote command in response (reuse jsonBody from time sync)
             char* cmdStart = strstr(jsonBody, "\"command\":\"");
             if (cmdStart) {
                 cmdStart += 11; // Skip past "command":"
@@ -1102,11 +1483,21 @@ static bool sendHeartbeat() {
                     } else if (strcmp(command, "send_now") == 0) {
                         Serial.println("[COMMAND] Force send requested");
                         g_forceSendRequested = true;
+                    } else if (strcmp(command, "geolocate") == 0) {
+                        Serial.println("[COMMAND] Remote geolocation requested");
+                        g_geolocationPending = true;
                     } else {
                         Serial.printf("[COMMAND] Unknown command: %s\n", command);
                     }
                 }
             }
+        }
+
+        // OTA rollback protection: After first successful communication, mark firmware valid
+        if (!g_otaConfirmed) {
+            esp_ota_mark_app_valid_cancel_rollback();
+            g_otaConfirmed = true;
+            Serial.println("[OTA] Firmware confirmed valid - rollback disabled");
         }
     } else {
         Serial.println("[HEARTBEAT] Failed");
@@ -1229,6 +1620,10 @@ static void startOtaMode() {
     ledSetStatus(LED_STATUS_OTA_MODE);
     g_otaInProgress = true;
 
+    // Disable watchdog during OTA (long operation)
+    esp_task_wdt_delete(NULL);
+    Serial.println("[OTA] Watchdog disabled for OTA");
+
     // Stop probe capture
     stopProbeCapture();
 
@@ -1263,6 +1658,10 @@ static void stopOtaMode() {
     g_otaInProgress = false;
     g_otaRequested = false;
 
+    // Re-enable watchdog timer
+    esp_task_wdt_add(NULL);
+    Serial.println("[OTA] Watchdog re-enabled");
+
     // Restart probe capture
     startProbeCapture();
 
@@ -1280,14 +1679,18 @@ static void stopOtaMode() {
 
 // Get current counts and reset
 static void getAndResetCounts(uint32_t* impressions, uint32_t* unique,
-                               uint32_t* apple, uint32_t* android, uint32_t* other,
-                               int* probeRssiAvg, int* probeRssiMin, int* probeRssiMax) {
+                               int* probeRssiAvg, int* probeRssiMin, int* probeRssiMax,
+                               uint32_t* dwell_0_1, uint32_t* dwell_1_5,
+                               uint32_t* dwell_5_10, uint32_t* dwell_10plus,
+                               uint32_t* rssi_immediate, uint32_t* rssi_near,
+                               uint32_t* rssi_far, uint32_t* rssi_remote,
+                               uint32_t* bleImpressions, uint32_t* bleUnique,
+                               uint32_t* bleApple, uint32_t* bleAndroid, uint32_t* bleOther,
+                               int* bleRssiAvg) {
+    // Get WiFi probe counts
     portENTER_CRITICAL(&g_probeMux);
     *impressions = g_totalProbes;
     *unique = g_uniqueMacs.size();
-    *apple = g_appleCount;
-    *android = g_androidCount;
-    *other = g_otherCount;
     // Calculate probe RSSI stats
     if (g_probeRssiCount > 0) {
         *probeRssiAvg = g_probeRssiSum / (int32_t)g_probeRssiCount;
@@ -1298,27 +1701,91 @@ static void getAndResetCounts(uint32_t* impressions, uint32_t* unique,
         *probeRssiMin = 0;
         *probeRssiMax = 0;
     }
-    // Reset all counters
+    // Calculate dwell time buckets
+    // For each MAC, calculate how many minutes they were seen (lastSeen - firstSeen + 1)
+    *dwell_0_1 = 0;
+    *dwell_1_5 = 0;
+    *dwell_5_10 = 0;
+    *dwell_10plus = 0;
+    for (auto& kv : g_dwellFirstSeen) {
+        uint64_t mac = kv.first;
+        uint16_t firstMin = kv.second;
+        auto lastIt = g_dwellLastSeen.find(mac);
+        if (lastIt != g_dwellLastSeen.end()) {
+            uint16_t lastMin = lastIt->second;
+            // Handle minute wrap-around (unlikely in 5-min interval but safe)
+            int duration = (lastMin >= firstMin) ? (lastMin - firstMin + 1) : 1;
+            // Bucket the duration
+            if (duration <= 1) {
+                (*dwell_0_1)++;
+            } else if (duration <= 5) {
+                (*dwell_1_5)++;
+            } else if (duration <= 10) {
+                (*dwell_5_10)++;
+            } else {
+                (*dwell_10plus)++;
+            }
+        }
+    }
+    // Copy RSSI zone counts
+    *rssi_immediate = g_rssi_immediate;
+    *rssi_near = g_rssi_near;
+    *rssi_far = g_rssi_far;
+    *rssi_remote = g_rssi_remote;
+    // Reset WiFi counters
     g_totalProbes = 0;
-    g_appleCount = 0;
-    g_androidCount = 0;
-    g_otherCount = 0;
     g_filteredStatic = 0;
     g_probeRssiSum = 0;
     g_probeRssiMin = 0;
     g_probeRssiMax = -999;
     g_probeRssiCount = 0;
+    g_rssi_immediate = 0;
+    g_rssi_near = 0;
+    g_rssi_far = 0;
+    g_rssi_remote = 0;
     g_uniqueMacs.clear();
     g_uniqueAPs.clear();
+    g_dwellFirstSeen.clear();
+    g_dwellLastSeen.clear();
     portEXIT_CRITICAL(&g_probeMux);
+
+    // Get BLE counts
+    portENTER_CRITICAL(&g_bleMux);
+    *bleImpressions = g_bleImpressions;
+    *bleUnique = g_bleUniqueMacs.size();
+    *bleApple = g_bleAppleCount;
+    *bleAndroid = g_bleAndroidCount;
+    *bleOther = g_bleOtherCount;
+    if (g_bleRssiCount > 0) {
+        *bleRssiAvg = g_bleRssiSum / (int32_t)g_bleRssiCount;
+    } else {
+        *bleRssiAvg = 0;
+    }
+    // Reset BLE counters
+    g_bleImpressions = 0;
+    g_bleAppleCount = 0;
+    g_bleAndroidCount = 0;
+    g_bleOtherCount = 0;
+    g_bleRssiSum = 0;
+    g_bleRssiCount = 0;
+    g_bleUniqueMacs.clear();
+    portEXIT_CRITICAL(&g_bleMux);
 }
 
 // Report counts to backend
 static void reportCounts() {
-    uint32_t impressions, unique, apple, android, other;
+    uint32_t impressions, unique;
     int probeRssiAvg, probeRssiMin, probeRssiMax;
-    getAndResetCounts(&impressions, &unique, &apple, &android, &other,
-                      &probeRssiAvg, &probeRssiMin, &probeRssiMax);
+    uint32_t dwell_0_1, dwell_1_5, dwell_5_10, dwell_10plus;
+    uint32_t rssi_immediate, rssi_near, rssi_far, rssi_remote;
+    uint32_t bleImpressions, bleUnique, bleApple, bleAndroid, bleOther;
+    int bleRssiAvg;
+
+    getAndResetCounts(&impressions, &unique,
+                      &probeRssiAvg, &probeRssiMin, &probeRssiMax,
+                      &dwell_0_1, &dwell_1_5, &dwell_5_10, &dwell_10plus,
+                      &rssi_immediate, &rssi_near, &rssi_far, &rssi_remote,
+                      &bleImpressions, &bleUnique, &bleApple, &bleAndroid, &bleOther, &bleRssiAvg);
 
     // Get current cellular signal
     g_cellRssi = getSignalQuality();
@@ -1330,45 +1797,82 @@ static void reportCounts() {
     struct tm* timeinfo = gmtime(&rawtime);
     strftime(timestamp, sizeof(timestamp), "%Y-%m-%dT%H:%M:%SZ", timeinfo);
 
-    Serial.printf("[REPORT] Period: %lu probes, %lu unique (Apple:%lu Android:%lu Other:%lu)\n",
-                  impressions, unique, apple, android, other);
-    Serial.printf("[REPORT] Probe RSSI: avg=%d min=%d max=%d, Cell RSSI: %d dBm\n",
-                  probeRssiAvg, probeRssiMin, probeRssiMax, g_cellRssi);
+    Serial.printf("[REPORT] WiFi: %lu probes, %lu unique\n", impressions, unique);
+    Serial.printf("[REPORT] BLE: %lu ads, %lu unique (Apple:%lu Android:%lu Other:%lu)\n",
+                  bleImpressions, bleUnique, bleApple, bleAndroid, bleOther);
+    Serial.printf("[REPORT] Dwell: 0-1min:%lu 1-5min:%lu 5-10min:%lu 10+min:%lu\n",
+                  dwell_0_1, dwell_1_5, dwell_5_10, dwell_10plus);
+    Serial.printf("[REPORT] RSSI zones: immediate:%lu near:%lu far:%lu remote:%lu\n",
+                  rssi_immediate, rssi_near, rssi_far, rssi_remote);
+    Serial.printf("[REPORT] Probe RSSI: avg=%d min=%d max=%d, BLE RSSI: avg=%d, Cell: %d dBm\n",
+                  probeRssiAvg, probeRssiMin, probeRssiMax, bleRssiAvg, g_cellRssi);
 
-    // Try to send cached reading first (if any)
-    if (g_cachedReading.valid) {
-        Serial.println("[REPORT] Retrying cached reading...");
-        if (sendReading(g_cachedReading.timestamp,
-                        g_cachedReading.impressions,
-                        g_cachedReading.unique,
-                        g_cachedReading.apple,
-                        g_cachedReading.android,
-                        g_cachedReading.other,
-                        g_cachedReading.probeRssiAvg,
-                        g_cachedReading.probeRssiMin,
-                        g_cachedReading.probeRssiMax,
-                        g_cachedReading.cellRssi)) {
-            g_cachedReading.valid = false;
+    // Try to send cached readings first (up to 5 per report cycle to avoid timeout)
+    int cachedSent = 0;
+    CachedReading cached;
+    while (cachedSent < 5 && popCachedReading(&cached)) {
+        Serial.printf("[REPORT] Retrying cached reading (%d remaining)...\n", g_cacheCount);
+        if (sendReading(cached.timestamp,
+                        cached.impressions,
+                        cached.unique,
+                        cached.probeRssiAvg,
+                        cached.probeRssiMin,
+                        cached.probeRssiMax,
+                        cached.cellRssi,
+                        cached.dwell_0_1,
+                        cached.dwell_1_5,
+                        cached.dwell_5_10,
+                        cached.dwell_10plus,
+                        cached.rssi_immediate,
+                        cached.rssi_near,
+                        cached.rssi_far,
+                        cached.rssi_remote,
+                        cached.bleImpressions,
+                        cached.bleUnique,
+                        cached.bleApple,
+                        cached.bleAndroid,
+                        cached.bleOther,
+                        cached.bleRssiAvg)) {
+            cachedSent++;
             Serial.println("[REPORT] Cached reading sent successfully");
+        } else {
+            // Re-cache this reading at the front (it failed again)
+            cacheReading(cached);
+            break;  // Stop trying if network is down
         }
     }
 
     // Send current reading
-    if (!sendReading(timestamp, impressions, unique, apple, android, other,
-                     probeRssiAvg, probeRssiMin, probeRssiMax, g_cellRssi)) {
-        // Cache for retry
-        Serial.println("[REPORT] Caching reading for retry");
-        g_cachedReading.valid = true;
-        strncpy(g_cachedReading.timestamp, timestamp, sizeof(g_cachedReading.timestamp));
-        g_cachedReading.impressions = impressions;
-        g_cachedReading.unique = unique;
-        g_cachedReading.apple = apple;
-        g_cachedReading.android = android;
-        g_cachedReading.other = other;
-        g_cachedReading.probeRssiAvg = probeRssiAvg;
-        g_cachedReading.probeRssiMin = probeRssiMin;
-        g_cachedReading.probeRssiMax = probeRssiMax;
-        g_cachedReading.cellRssi = g_cellRssi;
+    if (!sendReading(timestamp, impressions, unique,
+                     probeRssiAvg, probeRssiMin, probeRssiMax, g_cellRssi,
+                     dwell_0_1, dwell_1_5, dwell_5_10, dwell_10plus,
+                     rssi_immediate, rssi_near, rssi_far, rssi_remote,
+                     bleImpressions, bleUnique, bleApple, bleAndroid, bleOther, bleRssiAvg)) {
+        // Cache for retry using circular buffer
+        CachedReading newReading;
+        newReading.valid = true;
+        strncpy(newReading.timestamp, timestamp, sizeof(newReading.timestamp));
+        newReading.impressions = impressions;
+        newReading.unique = unique;
+        newReading.probeRssiAvg = probeRssiAvg;
+        newReading.probeRssiMin = probeRssiMin;
+        newReading.probeRssiMax = probeRssiMax;
+        newReading.cellRssi = g_cellRssi;
+        newReading.dwell_0_1 = dwell_0_1;
+        newReading.dwell_1_5 = dwell_1_5;
+        newReading.dwell_5_10 = dwell_5_10;
+        newReading.dwell_10plus = dwell_10plus;
+        newReading.rssi_immediate = rssi_immediate;
+        newReading.rssi_near = rssi_near;
+        newReading.rssi_far = rssi_far;
+        newReading.rssi_remote = rssi_remote;
+        newReading.bleImpressions = bleImpressions;
+        newReading.bleUnique = bleUnique;
+        newReading.bleApple = bleApple;
+        newReading.bleAndroid = bleAndroid;
+        newReading.bleOther = bleOther;
+        newReading.bleRssiAvg = bleRssiAvg;
+        cacheReading(newReading);
 
         // Try to re-initialize network for next time
         g_networkReady = false;
@@ -1673,23 +2177,37 @@ void setup() {
     Serial.println("[INIT] Starting probe capture...");
     startProbeCapture();
 
+    // Initialize BLE for device type detection
+    Serial.println("[INIT] Initializing BLE scanning...");
+    initBle();
+
     // Initialize timing
     g_lastReportTime = millis();
+    g_lastRadioSwitch = millis();  // Initialize radio time-slicing
+
+    // Initialize watchdog timer - reboot if no feed for 5 minutes
+    // This provides self-healing if the device gets stuck
+    esp_task_wdt_init(300, true);  // 300 seconds (5 minutes), panic on timeout
+    esp_task_wdt_add(NULL);        // Add current task (loop) to watchdog
+    Serial.println("[INIT] Watchdog timer initialized (5 min timeout)");
 
     Serial.println("[INIT] Initialization complete");
-    Serial.println("[INIT] Monitoring for probe requests...");
+    Serial.println("[INIT] Monitoring for WiFi probes and BLE advertisements...");
     Serial.println();
 }
 
 void loop() {
+    // Feed the watchdog at start of each loop iteration
+    esp_task_wdt_reset();
+
     uint32_t now = millis();
 
     // Update LED animation
     ledUpdate();
 
-    // Update channel hopping (only when not in OTA mode)
+    // Update radio mode (WiFi/BLE time-slicing) - only when not in OTA mode
     if (!g_otaInProgress) {
-        updateChannelHop();
+        updateRadioMode();
     }
 
     // Check buttons
@@ -1727,8 +2245,12 @@ void loop() {
 
         Serial.println("\n[LOOP] Sending report...");
 
-        // Temporarily stop probe capture during transmission
-        stopProbeCapture();
+        // Temporarily stop scanning during transmission
+        if (g_radioMode == RADIO_WIFI) {
+            stopProbeCapture();
+        } else {
+            stopBleScan();
+        }
 
         // Ensure network is ready
         if (!g_networkReady) {
@@ -1736,21 +2258,32 @@ void loop() {
             initializeNetwork();
         }
 
-        // Send pending geolocation if network just came up
-        if (g_networkReady && g_geolocationPending && g_wifiNetworkCount > 0) {
-            Serial.println("[LOOP] Sending pending geolocation data...");
-            if (sendGeolocationData()) {
-                g_geolocationPending = false;
+        // Handle pending geolocation (from boot or remote command)
+        if (g_networkReady && g_geolocationPending) {
+            Serial.println("[LOOP] Processing geolocation request...");
+            // Perform fresh WiFi scan (in case this was a remote command)
+            performGeolocationScan();
+            if (g_wifiNetworkCount > 0) {
+                if (sendGeolocationData()) {
+                    g_geolocationPending = false;
+                    Serial.println("[LOOP] Geolocation sent successfully");
+                }
+            } else {
+                Serial.println("[LOOP] No WiFi networks found for geolocation");
+                g_geolocationPending = false;  // Clear to avoid infinite retries
             }
+            // Note: probe capture will be restarted at end of report cycle
         }
 
         // Send report
         reportCounts();
 
-        // Resume probe capture
+        // Resume scanning (always start in WiFi mode after report)
+        g_radioMode = RADIO_WIFI;
+        g_lastRadioSwitch = millis();
         startProbeCapture();
 
-        Serial.println("[LOOP] Resuming probe capture\n");
+        Serial.println("[LOOP] Resuming probe/BLE capture\n");
     }
 
     // Daily heartbeat (every 24 hours)
@@ -1767,23 +2300,32 @@ void loop() {
     if ((now - lastStatus) >= 60000) {
         lastStatus = now;
 
-        uint32_t probes, unique, apple, android, other, filtered;
+        uint32_t probes, unique, filtered;
         int probeRssiAvg = 0;
         portENTER_CRITICAL(&g_probeMux);
         probes = g_totalProbes;
         unique = g_uniqueMacs.size();
-        apple = g_appleCount;
-        android = g_androidCount;
-        other = g_otherCount;
         filtered = g_filteredStatic;
         if (g_probeRssiCount > 0) {
             probeRssiAvg = g_probeRssiSum / (int32_t)g_probeRssiCount;
         }
         portEXIT_CRITICAL(&g_probeMux);
 
+        uint32_t bleAds, bleUnique, bleApple, bleAndroid, bleOther;
+        portENTER_CRITICAL(&g_bleMux);
+        bleAds = g_bleImpressions;
+        bleUnique = g_bleUniqueMacs.size();
+        bleApple = g_bleAppleCount;
+        bleAndroid = g_bleAndroidCount;
+        bleOther = g_bleOtherCount;
+        portEXIT_CRITICAL(&g_bleMux);
+
         uint32_t nextReport = (REPORT_INTERVAL_MS - (now - g_lastReportTime)) / 1000;
-        Serial.printf("[STATUS] CH:%d Probes:%lu Unique:%lu Apple:%lu Android:%lu Other:%lu Filtered:%lu ProbeRSSI:%d Next:%lu sec\n",
-                      WIFI_CHANNELS[g_currentChannelIndex], probes, unique, apple, android, other, filtered, probeRssiAvg, nextReport);
+        const char* radioStr = (g_radioMode == RADIO_WIFI) ? "WiFi" : "BLE";
+        Serial.printf("[STATUS] %s CH:%d WiFi:%lu/%lu BLE:%lu/%lu(A:%lu D:%lu O:%lu) Filtered:%lu Next:%lu sec\n",
+                      radioStr, WIFI_CHANNELS[g_currentChannelIndex],
+                      probes, unique, bleAds, bleUnique, bleApple, bleAndroid, bleOther,
+                      filtered, nextReport);
     }
 
     // Small delay to yield to other tasks

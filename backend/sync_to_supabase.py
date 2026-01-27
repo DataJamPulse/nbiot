@@ -2,7 +2,7 @@
 """
 Sync readings and devices from local SQLite to Supabase.
 Runs as a cron job every 5 minutes.
-Updated for v2.3 - includes extended RSSI metrics.
+Updated for v2.6 - includes BLE device counting fields.
 """
 
 import sqlite3
@@ -34,6 +34,9 @@ def get_unsynced_readings():
         SELECT id, device_id, timestamp, impressions, unique_count,
                signal_dbm, apple_count, android_count, other_count,
                probe_rssi_avg, probe_rssi_min, probe_rssi_max, cell_rssi,
+               dwell_0_1, dwell_1_5, dwell_5_10, dwell_10plus,
+               rssi_immediate, rssi_near, rssi_far, rssi_remote,
+               ble_impressions, ble_unique, ble_apple, ble_android, ble_other, ble_rssi_avg,
                received_at
         FROM readings
         WHERE synced_to_supabase = 0
@@ -75,6 +78,20 @@ def sync_readings_to_supabase(readings):
             "probe_rssi_min": r.get("probe_rssi_min"),
             "probe_rssi_max": r.get("probe_rssi_max"),
             "cell_rssi": r.get("cell_rssi"),
+            "dwell_0_1": r.get("dwell_0_1", 0) or 0,
+            "dwell_1_5": r.get("dwell_1_5", 0) or 0,
+            "dwell_5_10": r.get("dwell_5_10", 0) or 0,
+            "dwell_10plus": r.get("dwell_10plus", 0) or 0,
+            "rssi_immediate": r.get("rssi_immediate", 0) or 0,
+            "rssi_near": r.get("rssi_near", 0) or 0,
+            "rssi_far": r.get("rssi_far", 0) or 0,
+            "rssi_remote": r.get("rssi_remote", 0) or 0,
+            "ble_impressions": r.get("ble_impressions", 0) or 0,
+            "ble_unique": r.get("ble_unique", 0) or 0,
+            "ble_apple": r.get("ble_apple", 0) or 0,
+            "ble_android": r.get("ble_android", 0) or 0,
+            "ble_other": r.get("ble_other", 0) or 0,
+            "ble_rssi_avg": r.get("ble_rssi_avg"),
             "received_at": r["received_at"]
         })
 
@@ -105,7 +122,7 @@ def get_devices():
     cursor = conn.execute("""
         SELECT device_id, project_name, location_name, timezone,
                firmware_version, status, registered_at, last_seen_at,
-               last_signal_dbm, latitude, longitude
+               last_signal_dbm, latitude, longitude, device_pin
         FROM devices
     """)
     rows = cursor.fetchall()
@@ -131,7 +148,8 @@ def sync_devices_to_supabase(devices):
             "last_seen_at": d["last_seen_at"],
             "last_signal_dbm": d["last_signal_dbm"],
             "latitude": d["latitude"],
-            "longitude": d["longitude"]
+            "longitude": d["longitude"],
+            "device_pin": d.get("device_pin")
         })
 
     url = f"{SUPABASE_URL}/rest/v1/nbiot_devices"
