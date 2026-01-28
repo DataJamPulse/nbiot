@@ -53,37 +53,19 @@ extern "C" {
 // Device Type Classification (BLE Manufacturer ID based)
 // =============================================================================
 
-enum DeviceType { DEVICE_APPLE, DEVICE_ANDROID, DEVICE_OTHER };
+enum DeviceType { DEVICE_APPLE, DEVICE_OTHER };
 
-// BLE Manufacturer IDs for device classification
-// These are registered with Bluetooth SIG and reliably identify device manufacturers
-#define BLE_MANUFACTURER_APPLE       0x004C  // Apple Inc.
-#define BLE_MANUFACTURER_GOOGLE      0x00E0  // Google (Fast Pair)
-#define BLE_MANUFACTURER_SAMSUNG     0x0075  // Samsung Electronics
-#define BLE_MANUFACTURER_XIAOMI      0x0310  // Xiaomi Inc.
-#define BLE_MANUFACTURER_HUAWEI      0x0157  // Huawei Technologies
-#define BLE_MANUFACTURER_OPPO        0x03DA  // OPPO
-#define BLE_MANUFACTURER_ONEPLUS     0x03E5  // OnePlus (shared with OPPO)
-#define BLE_MANUFACTURER_REALME      0x0488  // Realme
+// BLE Manufacturer ID for Apple - the only one we can reliably detect
+// Android detection via manufacturer IDs is unreliable (fragmented ecosystem)
+#define BLE_MANUFACTURER_APPLE 0x004C  // Apple Inc.
 
 // Classify device based on BLE manufacturer ID
+// Returns DEVICE_APPLE for Apple devices, DEVICE_OTHER for everything else
 static DeviceType classifyBleDevice(uint16_t manufacturerId) {
-    switch (manufacturerId) {
-        case BLE_MANUFACTURER_APPLE:
-            return DEVICE_APPLE;
-
-        case BLE_MANUFACTURER_GOOGLE:
-        case BLE_MANUFACTURER_SAMSUNG:
-        case BLE_MANUFACTURER_XIAOMI:
-        case BLE_MANUFACTURER_HUAWEI:
-        case BLE_MANUFACTURER_OPPO:
-        case BLE_MANUFACTURER_ONEPLUS:
-        case BLE_MANUFACTURER_REALME:
-            return DEVICE_ANDROID;
-
-        default:
-            return DEVICE_OTHER;
+    if (manufacturerId == BLE_MANUFACTURER_APPLE) {
+        return DEVICE_APPLE;
     }
+    return DEVICE_OTHER;
 }
 
 // =============================================================================
@@ -209,11 +191,10 @@ static std::set<uint64_t> g_uniqueMacs;
 static std::set<uint64_t> g_uniqueAPs;          // Unique access points (BSSIDs)
 static portMUX_TYPE g_probeMux = portMUX_INITIALIZER_UNLOCKED;
 
-// BLE counting state - reliable OS detection via manufacturer IDs
+// BLE counting state - Apple detection via manufacturer ID 0x004C
 static volatile uint32_t g_bleImpressions = 0;  // Total BLE advertisements
-static volatile uint32_t g_bleAppleCount = 0;   // Apple devices (0x004C)
-static volatile uint32_t g_bleAndroidCount = 0; // Android devices (Google, Samsung, etc.)
-static volatile uint32_t g_bleOtherCount = 0;   // Other BLE devices
+static volatile uint32_t g_bleAppleCount = 0;   // Apple devices (0x004C) - reliable
+static volatile uint32_t g_bleOtherCount = 0;   // Everything else (Android, wearables, IoT)
 static volatile int32_t g_bleRssiSum = 0;       // Sum for average calculation
 static volatile uint32_t g_bleRssiCount = 0;    // Count for average
 static std::set<uint64_t> g_bleUniqueMacs;      // Unique BLE MACs per minute
@@ -288,11 +269,10 @@ struct CachedReading {
     uint32_t rssi_near;
     uint32_t rssi_far;
     uint32_t rssi_remote;
-    // BLE counting fields (v4.0)
+    // BLE counting fields (v4.0) - Apple vs Other
     uint32_t bleImpressions;
     uint32_t bleUnique;
     uint32_t bleApple;
-    uint32_t bleAndroid;
     uint32_t bleOther;
     int bleRssiAvg;
 };
@@ -723,17 +703,11 @@ class BleAdvertisedDeviceCallbacks : public NimBLEAdvertisedDeviceCallbacks {
             g_bleUniqueMacs.insert(dedupKey);
         }
 
-        // Count by device type
-        switch (deviceType) {
-            case DEVICE_APPLE:
-                g_bleAppleCount++;
-                break;
-            case DEVICE_ANDROID:
-                g_bleAndroidCount++;
-                break;
-            default:
-                g_bleOtherCount++;
-                break;
+        // Count by device type (Apple vs Other)
+        if (deviceType == DEVICE_APPLE) {
+            g_bleAppleCount++;
+        } else {
+            g_bleOtherCount++;
         }
 
         // Track RSSI
@@ -1142,7 +1116,7 @@ static bool sendReading(const char* timestamp, uint32_t impressions, uint32_t un
                         uint32_t dwell_0_1, uint32_t dwell_1_5, uint32_t dwell_5_10, uint32_t dwell_10plus,
                         uint32_t rssi_immediate, uint32_t rssi_near, uint32_t rssi_far, uint32_t rssi_remote,
                         uint32_t bleImpressions, uint32_t bleUnique,
-                        uint32_t bleApple, uint32_t bleAndroid, uint32_t bleOther, int bleRssiAvg) {
+                        uint32_t bleApple, uint32_t bleOther, int bleRssiAvg) {
     Serial.printf("[HTTP] WiFi: t=%s, i=%lu, u=%lu\n", timestamp, impressions, unique);
     Serial.printf("[HTTP]   probe_rssi: avg=%d min=%d max=%d, cell_rssi=%d\n",
                   probeRssiAvg, probeRssiMin, probeRssiMax, cellRssi);
@@ -1150,25 +1124,24 @@ static bool sendReading(const char* timestamp, uint32_t impressions, uint32_t un
                   dwell_0_1, dwell_1_5, dwell_5_10, dwell_10plus);
     Serial.printf("[HTTP]   rssi_zones: imm=%lu, near=%lu, far=%lu, remote=%lu\n",
                   rssi_immediate, rssi_near, rssi_far, rssi_remote);
-    Serial.printf("[HTTP] BLE: i=%lu, u=%lu, Apple=%lu, Android=%lu, Other=%lu, rssi_avg=%d\n",
-                  bleImpressions, bleUnique, bleApple, bleAndroid, bleOther, bleRssiAvg);
+    Serial.printf("[HTTP] BLE: i=%lu, u=%lu, Apple=%lu, Other=%lu, rssi_avg=%d\n",
+                  bleImpressions, bleUnique, bleApple, bleOther, bleRssiAvg);
 
     ledSetStatus(LED_STATUS_TRANSMITTING);  // Orange pulsing during send
 
-    // Build JSON payload with WiFi probes + BLE device counts
-    // Note: WiFi apple/android/other removed (unreliable), BLE provides accurate OS detection
+    // Build JSON payload with WiFi probes + BLE device counts (Apple vs Other)
     char jsonPayload[768];
     snprintf(jsonPayload, sizeof(jsonPayload),
              "{\"d\":\"%s\",\"t\":\"%s\",\"i\":%lu,\"u\":%lu,"
              "\"probe_rssi_avg\":%d,\"probe_rssi_min\":%d,\"probe_rssi_max\":%d,\"cell_rssi\":%d,"
              "\"dwell_0_1\":%lu,\"dwell_1_5\":%lu,\"dwell_5_10\":%lu,\"dwell_10plus\":%lu,"
              "\"rssi_immediate\":%lu,\"rssi_near\":%lu,\"rssi_far\":%lu,\"rssi_remote\":%lu,"
-             "\"ble_i\":%lu,\"ble_u\":%lu,\"ble_apple\":%lu,\"ble_android\":%lu,\"ble_other\":%lu,\"ble_rssi_avg\":%d}",
+             "\"ble_i\":%lu,\"ble_u\":%lu,\"ble_apple\":%lu,\"ble_other\":%lu,\"ble_rssi_avg\":%d}",
              DEVICE_ID, timestamp, impressions, unique,
              probeRssiAvg, probeRssiMin, probeRssiMax, cellRssi,
              dwell_0_1, dwell_1_5, dwell_5_10, dwell_10plus,
              rssi_immediate, rssi_near, rssi_far, rssi_remote,
-             bleImpressions, bleUnique, bleApple, bleAndroid, bleOther, bleRssiAvg);
+             bleImpressions, bleUnique, bleApple, bleOther, bleRssiAvg);
 
     size_t jsonLen = strlen(jsonPayload);
 
@@ -1685,7 +1658,7 @@ static void getAndResetCounts(uint32_t* impressions, uint32_t* unique,
                                uint32_t* rssi_immediate, uint32_t* rssi_near,
                                uint32_t* rssi_far, uint32_t* rssi_remote,
                                uint32_t* bleImpressions, uint32_t* bleUnique,
-                               uint32_t* bleApple, uint32_t* bleAndroid, uint32_t* bleOther,
+                               uint32_t* bleApple, uint32_t* bleOther,
                                int* bleRssiAvg) {
     // Get WiFi probe counts
     portENTER_CRITICAL(&g_probeMux);
@@ -1749,12 +1722,11 @@ static void getAndResetCounts(uint32_t* impressions, uint32_t* unique,
     g_dwellLastSeen.clear();
     portEXIT_CRITICAL(&g_probeMux);
 
-    // Get BLE counts
+    // Get BLE counts (Apple vs Other)
     portENTER_CRITICAL(&g_bleMux);
     *bleImpressions = g_bleImpressions;
     *bleUnique = g_bleUniqueMacs.size();
     *bleApple = g_bleAppleCount;
-    *bleAndroid = g_bleAndroidCount;
     *bleOther = g_bleOtherCount;
     if (g_bleRssiCount > 0) {
         *bleRssiAvg = g_bleRssiSum / (int32_t)g_bleRssiCount;
@@ -1764,7 +1736,6 @@ static void getAndResetCounts(uint32_t* impressions, uint32_t* unique,
     // Reset BLE counters
     g_bleImpressions = 0;
     g_bleAppleCount = 0;
-    g_bleAndroidCount = 0;
     g_bleOtherCount = 0;
     g_bleRssiSum = 0;
     g_bleRssiCount = 0;
@@ -1778,14 +1749,14 @@ static void reportCounts() {
     int probeRssiAvg, probeRssiMin, probeRssiMax;
     uint32_t dwell_0_1, dwell_1_5, dwell_5_10, dwell_10plus;
     uint32_t rssi_immediate, rssi_near, rssi_far, rssi_remote;
-    uint32_t bleImpressions, bleUnique, bleApple, bleAndroid, bleOther;
+    uint32_t bleImpressions, bleUnique, bleApple, bleOther;
     int bleRssiAvg;
 
     getAndResetCounts(&impressions, &unique,
                       &probeRssiAvg, &probeRssiMin, &probeRssiMax,
                       &dwell_0_1, &dwell_1_5, &dwell_5_10, &dwell_10plus,
                       &rssi_immediate, &rssi_near, &rssi_far, &rssi_remote,
-                      &bleImpressions, &bleUnique, &bleApple, &bleAndroid, &bleOther, &bleRssiAvg);
+                      &bleImpressions, &bleUnique, &bleApple, &bleOther, &bleRssiAvg);
 
     // Get current cellular signal
     g_cellRssi = getSignalQuality();
@@ -1798,8 +1769,8 @@ static void reportCounts() {
     strftime(timestamp, sizeof(timestamp), "%Y-%m-%dT%H:%M:%SZ", timeinfo);
 
     Serial.printf("[REPORT] WiFi: %lu probes, %lu unique\n", impressions, unique);
-    Serial.printf("[REPORT] BLE: %lu ads, %lu unique (Apple:%lu Android:%lu Other:%lu)\n",
-                  bleImpressions, bleUnique, bleApple, bleAndroid, bleOther);
+    Serial.printf("[REPORT] BLE: %lu ads, %lu unique (Apple:%lu Other:%lu)\n",
+                  bleImpressions, bleUnique, bleApple, bleOther);
     Serial.printf("[REPORT] Dwell: 0-1min:%lu 1-5min:%lu 5-10min:%lu 10+min:%lu\n",
                   dwell_0_1, dwell_1_5, dwell_5_10, dwell_10plus);
     Serial.printf("[REPORT] RSSI zones: immediate:%lu near:%lu far:%lu remote:%lu\n",
@@ -1830,7 +1801,6 @@ static void reportCounts() {
                         cached.bleImpressions,
                         cached.bleUnique,
                         cached.bleApple,
-                        cached.bleAndroid,
                         cached.bleOther,
                         cached.bleRssiAvg)) {
             cachedSent++;
@@ -1847,7 +1817,7 @@ static void reportCounts() {
                      probeRssiAvg, probeRssiMin, probeRssiMax, g_cellRssi,
                      dwell_0_1, dwell_1_5, dwell_5_10, dwell_10plus,
                      rssi_immediate, rssi_near, rssi_far, rssi_remote,
-                     bleImpressions, bleUnique, bleApple, bleAndroid, bleOther, bleRssiAvg)) {
+                     bleImpressions, bleUnique, bleApple, bleOther, bleRssiAvg)) {
         // Cache for retry using circular buffer
         CachedReading newReading;
         newReading.valid = true;
@@ -1869,7 +1839,6 @@ static void reportCounts() {
         newReading.bleImpressions = bleImpressions;
         newReading.bleUnique = bleUnique;
         newReading.bleApple = bleApple;
-        newReading.bleAndroid = bleAndroid;
         newReading.bleOther = bleOther;
         newReading.bleRssiAvg = bleRssiAvg;
         cacheReading(newReading);
@@ -2311,20 +2280,19 @@ void loop() {
         }
         portEXIT_CRITICAL(&g_probeMux);
 
-        uint32_t bleAds, bleUnique, bleApple, bleAndroid, bleOther;
+        uint32_t bleAds, bleUniq, bleApple, bleOther;
         portENTER_CRITICAL(&g_bleMux);
         bleAds = g_bleImpressions;
-        bleUnique = g_bleUniqueMacs.size();
+        bleUniq = g_bleUniqueMacs.size();
         bleApple = g_bleAppleCount;
-        bleAndroid = g_bleAndroidCount;
         bleOther = g_bleOtherCount;
         portEXIT_CRITICAL(&g_bleMux);
 
         uint32_t nextReport = (REPORT_INTERVAL_MS - (now - g_lastReportTime)) / 1000;
         const char* radioStr = (g_radioMode == RADIO_WIFI) ? "WiFi" : "BLE";
-        Serial.printf("[STATUS] %s CH:%d WiFi:%lu/%lu BLE:%lu/%lu(A:%lu D:%lu O:%lu) Filtered:%lu Next:%lu sec\n",
+        Serial.printf("[STATUS] %s CH:%d WiFi:%lu/%lu BLE:%lu/%lu(Apple:%lu Other:%lu) Filt:%lu Next:%lu sec\n",
                       radioStr, WIFI_CHANNELS[g_currentChannelIndex],
-                      probes, unique, bleAds, bleUnique, bleApple, bleAndroid, bleOther,
+                      probes, unique, bleAds, bleUniq, bleApple, bleOther,
                       filtered, nextReport);
     }
 
