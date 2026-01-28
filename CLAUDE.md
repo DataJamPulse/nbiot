@@ -30,12 +30,12 @@ Use these agents for specific tasks:
 ### Active Devices
 | Device ID | Firmware | Location | Status |
 |-----------|----------|----------|--------|
-| JBNB0001 | **v4.0** | Dev Unit 1 | Pending update |
-| JBNB0002 | **v4.0** | Home - Dev Unit | Pending update |
+| JBNB0001 | **v3.1** | Dev Unit 1 | Online (needs v4.0 update) |
+| JBNB0002 | **v4.0** | Home - Dev Unit | Online |
 
 ### Isolated Test Environment Architecture
 ```
-JBNB Device (firmware v3.0)
+JBNB Device (firmware v4.0)
     ↓ HTTP over NB-IoT cellular (T-Mobile)
 Hologram
     ↓
@@ -59,7 +59,7 @@ Shop owner view - simple language, no technical jargon:
 - Visitors Today (big number)
 - Busiest Hour
 - Foot Traffic chart (Today/Yesterday/Week tabs)
-- "Who's Visiting?" - device type breakdown (Apple, Android, Other) via BLE
+- "Who's Visiting?" - device type breakdown (Apple vs Other) via BLE manufacturer IDs
 - "Where Are They?" - proximity breakdown (At Counter, In Store, Window Shopping, Walking Past)
 - "How Long Do They Stay?" - engagement (Quick Glance, Browsing, Shopping, Loyal Customer)
 
@@ -111,24 +111,17 @@ Firmware categorizes probes by signal strength (proves viewability):
 **Note:** Distances are approximate. Actual range depends on phone transmit power and obstacles.
 
 ### BLE Device Counting (v4.0)
-Firmware scans Bluetooth Low Energy advertisements for accurate OS detection via manufacturer IDs.
+Firmware scans Bluetooth Low Energy advertisements for OS detection via manufacturer IDs.
 
 **Why BLE instead of WiFi for OS detection:**
 - WiFi probe requests use randomized MACs (no manufacturer info)
 - Android devices are often silent (not sending probes when not in use)
 - BLE advertisements contain manufacturer IDs registered with Bluetooth SIG
 
-**Manufacturer ID Classification:**
-| ID | Manufacturer | Classification |
-|----|--------------|----------------|
-| 0x004C | Apple Inc. | Apple |
-| 0x00E0 | Google (Fast Pair) | Android |
-| 0x0075 | Samsung | Android |
-| 0x0310 | Xiaomi | Android |
-| 0x0157 | Huawei | Android |
-| 0x03DA | OPPO | Android |
-| 0x03E5 | OnePlus | Android |
-| Others | — | Other |
+**Classification: Apple vs Other**
+Only Apple devices can be reliably detected via manufacturer ID (0x004C). Android manufacturer ID detection is unreliable due to ecosystem fragmentation (many vendors don't broadcast standard IDs). Therefore:
+- **Apple:** Manufacturer ID 0x004C (iPhone, iPad, Watch, AirPods)
+- **Other:** Everything else (Android, wearables, IoT, unknown)
 
 **Time-Slicing Architecture:**
 ESP32 shares radio between WiFi and BLE, so firmware alternates:
@@ -142,9 +135,10 @@ ESP32 shares radio between WiFi and BLE, so firmware alternates:
 | `ble_i` | Total BLE advertisements detected |
 | `ble_u` | Unique BLE devices (per-minute dedup) |
 | `ble_apple` | Apple device count |
-| `ble_android` | Android device count |
-| `ble_other` | Other BLE devices (wearables, IoT) |
+| `ble_other` | Other BLE devices (Android, wearables, IoT) |
 | `ble_rssi_avg` | Average BLE signal strength (dBm) |
+
+**Note:** Backend still accepts `ble_android` for backwards compatibility but firmware v4.0 sends 0.
 
 **Privacy:** Only randomized BLE addresses are counted (same as WiFi probes).
 
@@ -199,9 +193,8 @@ Probe counting now deduplicates per MAC per minute (MRC "opportunity to see" sta
 
 ### Device Classification (v4.0)
 Firmware classifies devices via **BLE manufacturer IDs** (not WiFi OUI):
-- **Apple:** Manufacturer ID 0x004C (reliable)
-- **Android:** Google, Samsung, Xiaomi, Huawei, OPPO, OnePlus IDs
-- **Other:** Wearables, IoT devices, unidentified manufacturers
+- **Apple:** Manufacturer ID 0x004C (reliable - iPhone, iPad, Watch, AirPods)
+- **Other:** All non-Apple devices (Android detection unreliable due to ecosystem fragmentation)
 
 WiFi probe requests no longer used for OS detection (unreliable with randomized MACs).
 
@@ -234,7 +227,7 @@ WiFi probe requests no longer used for OS detection (unreliable with randomized 
 | Device authentication | ✓ Token-based |
 | NB-IoT → Backend data flow | ✓ **VERIFIED** - JBNB0001 sending |
 | Probe capture firmware | ✓ **COMPLETE** - Privacy filter + WiFi probes |
-| BLE device counting | ✓ **COMPLETE** - Accurate Apple/Android/Other via manufacturer IDs |
+| BLE device counting | ✓ **COMPLETE** - Apple vs Other via manufacturer IDs |
 | Supabase sync | ✓ COMPLETE - Cron job every 5 mins |
 
 ### Phase Status
@@ -259,12 +252,13 @@ NB-IoT has built-in network-layer encryption. TLS handshakes are unreliable over
 - [ ] Device history/events table for audit trail
 - [ ] Manual location entry when WiFi geolocation fails
 
-### Firmware v4.0 (2026-01-27)
-Major update: BLE device counting for accurate OS detection.
+### Firmware v4.0 (2026-01-28)
+Major update: BLE device counting for OS detection.
 
 | Feature | Description |
 |---------|-------------|
-| **BLE Device Counting** | NimBLE passive scanning for accurate Apple/Android/Other detection via manufacturer IDs |
+| **BLE Device Counting** | NimBLE passive scanning for Apple vs Other detection via manufacturer IDs |
+| **Apple vs Other** | Only Apple reliably detectable (0x004C); Android detection unreliable due to fragmentation |
 | **Radio Time-Slicing** | 12s WiFi + 3s BLE alternating (80/20 split) |
 | **Removed WiFi OS Detection** | WiFi probe MAC-based classification removed (unreliable) |
 | **OTA Rollback Protection** | ESP32 dual-partition OTA - new firmware must successfully send data before being marked valid |
@@ -391,10 +385,9 @@ Device JBNB0001 Token: B10fYoCjm0HWc8LltAXFsBpxw3pSCFALkDK5WVlIoIE
   "rssi_remote": 45,
   "ble_i": 200,
   "ble_u": 85,
-  "ble_apple": 45,
-  "ble_android": 30,
-  "ble_other": 10,
-  "ble_rssi_avg": -58
+  "ble_apple": 156,
+  "ble_other": 44,
+  "ble_rssi_avg": -68
 }
 ```
 
@@ -418,9 +411,10 @@ Device JBNB0001 Token: B10fYoCjm0HWc8LltAXFsBpxw3pSCFALkDK5WVlIoIE
 | `ble_i` | Total BLE advertisements |
 | `ble_u` | Unique BLE devices (per-minute dedup) |
 | `ble_apple` | Apple devices (manufacturer ID 0x004C) |
-| `ble_android` | Android devices (Google, Samsung, etc.) |
-| `ble_other` | Other BLE devices |
+| `ble_other` | Other BLE devices (Android, wearables, IoT) |
 | `ble_rssi_avg` | Average BLE signal strength (dBm) |
+
+**Note:** `ble_android` field exists in backend for backwards compatibility but v4.0 firmware sends 0.
 
 **Privacy Note:** Only randomized MACs are counted for both WiFi and BLE. Static addresses are filtered at the device level.
 
@@ -483,7 +477,7 @@ ALTER TABLE nbiot_readings ADD COLUMN IF NOT EXISTS cell_rssi INTEGER;
 ```
 /opt/datajam-nbiot/
 ├── venv/                 # Python virtual environment
-├── receiver.py           # Flask application (v2.3)
+├── receiver.py           # Flask application (v2.6)
 ├── sync_to_supabase.py   # Supabase sync script
 ├── data.db               # SQLite database
 └── data.db.v1.backup     # Backup of v1 database
@@ -637,7 +631,7 @@ python3 test_http_post.py
 ├── platformio.ini               # PlatformIO config
 ├── .gitignore                   # Excludes tokens, configs, credentials
 ├── src/
-│   ├── main.cpp                 # Main firmware source (v2.9)
+│   ├── main.cpp                 # Main firmware source (v4.0)
 │   └── device_config.h          # Device-specific config (auto-generated, gitignored)
 ├── scripts/
 │   ├── NBJBTOOL.sh              # Device provisioning tool
@@ -645,7 +639,7 @@ python3 test_http_post.py
 ├── docs/
 │   └── PROVISIONING_GUIDE.md    # Full provisioning documentation
 ├── backend/
-│   ├── receiver.py              # Local copy of Flask backend (v2.4)
+│   ├── receiver.py              # Local copy of Flask backend (v2.6)
 │   └── sync_to_supabase.py      # Supabase sync script
 ├── provisioning.log             # Log of provisioned devices (no tokens)
 └── *.py                         # Various diagnostic scripts
@@ -655,7 +649,7 @@ python3 test_http_post.py
 ```
 /opt/datajam-nbiot/
 ├── venv/                        # Python 3.12 virtual environment
-├── receiver.py                  # Flask backend v2.4
+├── receiver.py                  # Flask backend v2.6
 ├── sync_to_supabase.py          # Supabase sync script
 └── data.db                      # SQLite database
 ```
@@ -917,4 +911,4 @@ Integrating NB-IoT device management into DataJam Reports Portal.
 
 ---
 
-*Last Updated: 2026-01-26 (Firmware v3.0, Backend v2.5, NBJBTOOL.sh v2.0 with label generation, Device Activation Portal)*
+*Last Updated: 2026-01-28 (Firmware v4.0 with BLE Apple vs Other, Backend v2.6)*
