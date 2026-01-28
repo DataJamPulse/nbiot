@@ -247,7 +247,7 @@ NB-IoT has built-in network-layer encryption. TLS handshakes are unreliable over
 
 ### TODO
 - [x] Polish Fleet Command UI based on real data - DONE (Device Health section added)
-- [ ] Add remote command buttons to portal UI
+- [x] Add remote command buttons to portal UI - DONE (send_now, geolocate, reboot in fleet modal)
 - [ ] Persistent interval change (NVS storage) for set_interval command
 - [ ] Device history/events table for audit trail
 - [ ] Manual location entry when WiFi geolocation fails
