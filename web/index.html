@@ -616,19 +616,25 @@
             const grouped = {};
             filtered.forEach(r => {
                 const date = new Date(r.timestamp);
-                let key;
+                let sortKey, displayTime;
                 if (viewMode === 'hourly') {
-                    key = `${date.toLocaleDateString()} ${String(date.getHours()).padStart(2, '0')}:00`;
+                    // ISO format for correct sorting: "2026-01-28T10"
+                    sortKey = date.toISOString().slice(0, 13);
+                    // User-friendly display: "1/28/2026 10:00"
+                    displayTime = `${date.toLocaleDateString()} ${String(date.getHours()).padStart(2, '0')}:00`;
                 } else {
-                    key = date.toLocaleDateString();
+                    sortKey = date.toISOString().slice(0, 10);
+                    displayTime = date.toLocaleDateString();
                 }
+                const key = sortKey;
                 // Show device column when multiple devices selected (or none = all)
                 const showDeviceColumn = selectedDevices.size !== 1;
                 const groupKey = showDeviceColumn ? `${key}|${r.device_id}` : key;
 
                 if (!grouped[groupKey]) {
                     grouped[groupKey] = {
-                        time: key,
+                        sortKey: sortKey,
+                        time: displayTime,
                         device: r.device_id,
                         // WiFi counts
                         impressions: 0, unique: 0, wifi_apple: 0,
@@ -674,9 +680,9 @@
                 if (r.signal_dbm) g.signal_dbm.push(r.signal_dbm);
             });
 
-            // Sort by time descending
+            // Sort by time descending (using ISO sortKey for correct ordering)
             const rows = Object.values(grouped).sort((a, b) => {
-                if (a.time !== b.time) return b.time.localeCompare(a.time);
+                if (a.sortKey !== b.sortKey) return b.sortKey.localeCompare(a.sortKey);
                 return a.device.localeCompare(b.device);
             });
 
