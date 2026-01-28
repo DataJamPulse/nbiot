@@ -30,7 +30,7 @@ Use these agents for specific tasks:
 ### Active Devices
 | Device ID | Firmware | Location | Status |
 |-----------|----------|----------|--------|
-| JBNB0001 | **v3.1** | Dev Unit 1 | Online (needs v4.1 update) |
+| JBNB0001 | **v4.1** | Dev Unit 1 | Online |
 | JBNB0002 | **v4.1** | Home - Dev Unit | Online |
 
 ### Isolated Test Environment Architecture
