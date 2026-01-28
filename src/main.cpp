@@ -76,7 +76,7 @@ static DeviceType classifyBleDevice(uint16_t manufacturerId) {
 #include "device_config.h"
 
 // Firmware version
-static const char* FIRMWARE_VERSION = "4.0";
+static const char* FIRMWARE_VERSION = "4.1";
 
 // SSL Configuration (disabled for now - AT+CCHOPEN failing)
 #define USE_SSL false
@@ -696,21 +696,25 @@ class BleAdvertisedDeviceCallbacks : public NimBLEAdvertisedDeviceCallbacks {
 
         // Update counters with mutex protection
         portENTER_CRITICAL(&g_bleMux);
-        g_bleImpressions++;
+        g_bleImpressions++;  // Raw count: every advertisement
 
-        // Track unique per minute
+        // Track unique per minute - only count OS type for NEW devices
         if (g_bleUniqueMacs.size() < MAX_UNIQUE_MACS) {
+            // Check if this is a NEW device in this minute (not already seen)
+            bool isNewDevice = (g_bleUniqueMacs.find(dedupKey) == g_bleUniqueMacs.end());
             g_bleUniqueMacs.insert(dedupKey);
+
+            // Only increment OS counters for deduplicated (new) devices
+            if (isNewDevice) {
+                if (deviceType == DEVICE_APPLE) {
+                    g_bleAppleCount++;
+                } else {
+                    g_bleOtherCount++;
+                }
+            }
         }
 
-        // Count by device type (Apple vs Other)
-        if (deviceType == DEVICE_APPLE) {
-            g_bleAppleCount++;
-        } else {
-            g_bleOtherCount++;
-        }
-
-        // Track RSSI
+        // Track RSSI (still count every advertisement for signal averaging)
         g_bleRssiSum += rssi;
         g_bleRssiCount++;
         portEXIT_CRITICAL(&g_bleMux);
