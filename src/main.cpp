@@ -76,7 +76,7 @@ static DeviceType classifyBleDevice(uint16_t manufacturerId) {
 #include "device_config.h"
 
 // Firmware version
-static const char* FIRMWARE_VERSION = "4.1";
+static const char* FIRMWARE_VERSION = "4.2";
 
 // SSL Configuration (disabled for now - AT+CCHOPEN failing)
 #define USE_SSL false
@@ -1416,24 +1416,31 @@ static bool sendHeartbeat() {
                     // Parse ISO 8601: "2026-01-26T12:30:00+00:00" or "2026-01-26T12:30:00.123456+00:00"
                     int year, month, day, hour, minute, second;
                     if (sscanf(serverTime, "%d-%d-%dT%d:%d:%d", &year, &month, &day, &hour, &minute, &second) == 6) {
-                        // Convert to Unix timestamp
-                        struct tm timeinfo = {0};
-                        timeinfo.tm_year = year - 1900;
-                        timeinfo.tm_mon = month - 1;
-                        timeinfo.tm_mday = day;
-                        timeinfo.tm_hour = hour;
-                        timeinfo.tm_min = minute;
-                        timeinfo.tm_sec = second;
-
-                        time_t serverEpoch = mktime(&timeinfo);
-                        uint32_t deviceUptime = millis() / 1000;
-                        g_bootTimestamp = (uint32_t)serverEpoch - deviceUptime;
-
-                        if (!g_timeSynced) {
-                            Serial.printf("[TIME] Synced from server: %s\n", serverTime);
-                            Serial.printf("[TIME] Boot timestamp set to: %lu\n", g_bootTimestamp);
-                            g_timeSynced = true;
+                        // Convert to Unix timestamp manually (avoids mktime timezone issues)
+                        // Days from year 1970 to start of given year
+                        uint32_t days = 0;
+                        for (int y = 1970; y < year; y++) {
+                            days += (y % 4 == 0 && (y % 100 != 0 || y % 400 == 0)) ? 366 : 365;
                         }
+                        // Days in months of current year
+                        static const int daysInMonth[] = {31,28,31,30,31,30,31,31,30,31,30,31};
+                        bool isLeap = (year % 4 == 0 && (year % 100 != 0 || year % 400 == 0));
+                        for (int m = 0; m < month - 1; m++) {
+                            days += daysInMonth[m];
+                            if (m == 1 && isLeap) days++; // Feb in leap year
+                        }
+                        days += day - 1;
+
+                        uint32_t serverEpoch = days * 86400UL + hour * 3600UL + minute * 60UL + second;
+                        uint32_t deviceUptime = millis() / 1000;
+                        g_bootTimestamp = serverEpoch - deviceUptime;
+
+                        Serial.printf("[TIME] Parsed: %04d-%02d-%02d %02d:%02d:%02d\n", year, month, day, hour, minute, second);
+                        Serial.printf("[TIME] Server epoch: %lu, uptime: %lu\n", serverEpoch, deviceUptime);
+                        Serial.printf("[TIME] Boot timestamp set to: %lu\n", g_bootTimestamp);
+                        g_timeSynced = true;
+                    } else {
+                        Serial.printf("[TIME] Failed to parse: %s\n", serverTime);
                     }
                 }
             }
@@ -2113,7 +2120,7 @@ void setup() {
     delay(1000);
 
     // Set boot timestamp (would use NTP in production)
-    g_bootTimestamp = 1769515200;  // 2026-01-27T08:00:00Z - update manually until NTP added
+    g_bootTimestamp = 1769601600;  // 2026-01-28T08:00:00Z - fallback until server sync
 
     // Perform WiFi geolocation scan FIRST (fast, before network init)
     Serial.println("[INIT] Performing geolocation scan...");
