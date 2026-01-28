@@ -76,7 +76,7 @@ static DeviceType classifyBleDevice(uint16_t manufacturerId) {
 #include "device_config.h"
 
 // Firmware version
-static const char* FIRMWARE_VERSION = "4.2";
+static const char* FIRMWARE_VERSION = "4.3";
 
 // SSL Configuration (disabled for now - AT+CCHOPEN failing)
 #define USE_SSL false
@@ -1393,9 +1393,7 @@ static bool sendHeartbeat() {
     bool success = (strstr(g_atBuffer, "200") != NULL ||
                     strstr(g_atBuffer, "201") != NULL);
 
-    // Close TCP connection
-    atSendCommand("AT+CIPCLOSE=0", "OK", 5000);
-
+    // Parse server_time BEFORE closing connection (atSendCommand clears g_atBuffer!)
     if (success) {
         Serial.println("[HEARTBEAT] Success");
 
@@ -1486,6 +1484,9 @@ static bool sendHeartbeat() {
     } else {
         Serial.println("[HEARTBEAT] Failed");
     }
+
+    // Close TCP connection (after parsing is complete)
+    atSendCommand("AT+CIPCLOSE=0", "OK", 5000);
 
     return success;
 }
