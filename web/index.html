@@ -108,6 +108,9 @@
 
         /* Device List */
         .device {
+            display: flex;
+            align-items: center;
+            gap: 12px;
             padding: 12px 16px;
             border-bottom: 1px solid var(--border);
             cursor: pointer;
@@ -116,7 +119,33 @@
 
         .device:last-child { border-bottom: none; }
         .device:hover { background: var(--bg-elevated); }
-        .device.active { background: var(--accent-dim); }
+        .device.selected { background: var(--accent-dim); }
+
+        .device-checkbox {
+            width: 16px;
+            height: 16px;
+            border: 2px solid var(--text-muted);
+            border-radius: 3px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            transition: all 0.15s;
+        }
+
+        .device.selected .device-checkbox {
+            background: var(--accent);
+            border-color: var(--accent);
+        }
+
+        .device.selected .device-checkbox::after {
+            content: '✓';
+            color: var(--bg-deep);
+            font-size: 11px;
+            font-weight: bold;
+        }
+
+        .device-info { flex: 1; }
 
         .device-header {
             display: flex;
@@ -145,6 +174,18 @@
         .device-meta {
             font-size: 11px;
             color: var(--text-muted);
+        }
+
+        .device-actions {
+            padding: 8px 16px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            gap: 8px;
+        }
+
+        .device-actions button {
+            font-size: 11px;
+            padding: 4px 8px;
         }
 
         /* Main Content */
@@ -321,9 +362,7 @@
 
             <div class="main">
                 <div class="controls">
-                    <select id="deviceSelect">
-                        <option value="all">All Devices</option>
-                    </select>
+                    <span id="selectionInfo" style="color: var(--text-secondary); font-size: 13px;">All devices</span>
                     <select id="daysSelect">
                         <option value="1">Today</option>
                         <option value="3" selected>Last 3 Days</option>
@@ -387,7 +426,7 @@
     <script>
         const API_BASE = '/.netlify/functions/nbiot-api';
         let map, markers = [];
-        let currentDevice = 'all';
+        let selectedDevices = new Set();  // Multi-select: empty = all devices
         let currentDays = 3;
         let viewMode = 'hourly';
         let allReadings = [];
@@ -419,31 +458,73 @@
 
         function updateDeviceList() {
             const container = document.getElementById('deviceList');
-            container.innerHTML = devices.map(d => `
-                <div class="device ${currentDevice === d.device_id ? 'active' : ''}" data-id="${d.device_id}">
-                    <div class="device-header">
-                        <span class="device-id">${d.device_id}</span>
-                        <span class="device-status ${d.connection_status}"></span>
-                    </div>
-                    <div class="device-meta">${d.last_seen_ago || 'Never'} &middot; ${d.last_signal_dbm || '-'} dBm</div>
+
+            // Selection actions
+            const actionsHtml = `
+                <div class="device-actions">
+                    <button onclick="selectAllDevices()">Select All</button>
+                    <button onclick="clearSelection()">Clear</button>
                 </div>
-            `).join('');
+            `;
+
+            const devicesHtml = devices.map(d => {
+                const isSelected = selectedDevices.size === 0 || selectedDevices.has(d.device_id);
+                const displayName = d.location_name || d.device_id;
+                return `
+                <div class="device ${isSelected ? 'selected' : ''}" data-id="${d.device_id}">
+                    <div class="device-checkbox"></div>
+                    <div class="device-info">
+                        <div class="device-header">
+                            <span class="device-id">${displayName}</span>
+                            <span class="device-status ${d.connection_status}"></span>
+                        </div>
+                        <div class="device-meta">${d.device_id} &middot; ${d.last_seen_ago || 'Never'} &middot; ${d.last_signal_dbm || '-'} dBm</div>
+                    </div>
+                </div>
+            `}).join('');
+
+            container.innerHTML = actionsHtml + devicesHtml;
 
             container.querySelectorAll('.device').forEach(el => {
                 el.addEventListener('click', () => {
-                    currentDevice = el.dataset.id;
-                    document.getElementById('deviceSelect').value = currentDevice;
+                    const deviceId = el.dataset.id;
+                    if (selectedDevices.has(deviceId)) {
+                        selectedDevices.delete(deviceId);
+                    } else {
+                        selectedDevices.add(deviceId);
+                    }
                     updateDeviceList();
+                    updateSelectionInfo();
                     renderData();
                 });
             });
         }
 
-        function updateDeviceSelect() {
-            const select = document.getElementById('deviceSelect');
-            select.innerHTML = '<option value="all">All Devices</option>' +
-                devices.map(d => `<option value="${d.device_id}">${d.device_id}</option>`).join('');
-            select.value = currentDevice;
+        function selectAllDevices() {
+            devices.forEach(d => selectedDevices.add(d.device_id));
+            updateDeviceList();
+            updateSelectionInfo();
+            renderData();
+        }
+
+        function clearSelection() {
+            selectedDevices.clear();
+            updateDeviceList();
+            updateSelectionInfo();
+            renderData();
+        }
+
+        function updateSelectionInfo() {
+            const info = document.getElementById('selectionInfo');
+            if (selectedDevices.size === 0) {
+                info.textContent = 'All devices';
+            } else if (selectedDevices.size === 1) {
+                const deviceId = [...selectedDevices][0];
+                const device = devices.find(d => d.device_id === deviceId);
+                info.textContent = device?.location_name || deviceId;
+            } else {
+                info.textContent = `${selectedDevices.size} devices selected`;
+            }
         }
 
         async function loadDevices() {
@@ -456,7 +537,7 @@
 
                 updateMap();
                 updateDeviceList();
-                updateDeviceSelect();
+                updateSelectionInfo();
             } catch (err) {
                 console.error('Failed to load devices:', err);
             }
@@ -476,8 +557,9 @@
 
         function renderData() {
             let filtered = allReadings;
-            if (currentDevice !== 'all') {
-                filtered = allReadings.filter(r => r.device_id === currentDevice);
+            // Filter by selected devices (empty set means show all)
+            if (selectedDevices.size > 0) {
+                filtered = allReadings.filter(r => selectedDevices.has(r.device_id));
             }
 
             // Calculate totals
@@ -512,7 +594,9 @@
                 } else {
                     key = date.toLocaleDateString();
                 }
-                const groupKey = currentDevice === 'all' ? `${key}|${r.device_id}` : key;
+                // Show device column when multiple devices selected (or none = all)
+                const showDeviceColumn = selectedDevices.size !== 1;
+                const groupKey = showDeviceColumn ? `${key}|${r.device_id}` : key;
 
                 if (!grouped[groupKey]) {
                     grouped[groupKey] = {
@@ -586,12 +670,6 @@
         }
 
         // Event listeners
-        document.getElementById('deviceSelect').addEventListener('change', (e) => {
-            currentDevice = e.target.value;
-            updateDeviceList();
-            renderData();
-        });
-
         document.getElementById('daysSelect').addEventListener('change', (e) => {
             currentDays = parseInt(e.target.value);
             loadReadings();
