@@ -320,6 +320,20 @@
             color: var(--accent);
         }
 
+        /* Column group headers */
+        .header-groups th {
+            text-align: center;
+            font-size: 9px;
+            padding: 6px 8px;
+            border-bottom: 2px solid var(--border);
+        }
+
+        .group-wifi { background: rgba(21, 224, 188, 0.1); color: var(--accent); }
+        .group-ble { background: rgba(147, 51, 234, 0.1); color: #a855f7; }
+        .group-dwell { background: rgba(251, 191, 36, 0.1); color: #fbbf24; }
+        .group-prox { background: rgba(59, 130, 246, 0.1); color: #3b82f6; }
+        .group-signal { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
+
         /* Loading */
         .loading {
             padding: 40px;
@@ -388,29 +402,42 @@
                     <div class="table-scroll">
                         <table id="dataTable">
                             <thead>
+                                <tr class="header-groups">
+                                    <th colspan="2"></th>
+                                    <th colspan="3" class="group-wifi">WiFi Probes</th>
+                                    <th colspan="5" class="group-ble">BLE Devices</th>
+                                    <th colspan="4" class="group-dwell">Dwell Time</th>
+                                    <th colspan="4" class="group-prox">Proximity Zones</th>
+                                    <th colspan="5" class="group-signal">Signal Strength</th>
+                                </tr>
                                 <tr>
                                     <th>Time</th>
                                     <th>Device</th>
-                                    <th>WiFi Imp</th>
-                                    <th>WiFi Uniq</th>
-                                    <th>BLE Imp</th>
-                                    <th>BLE Uniq</th>
+                                    <th>Imp</th>
+                                    <th>Unique</th>
+                                    <th>Apple</th>
+                                    <th>Imp</th>
+                                    <th>Unique</th>
                                     <th>Apple</th>
                                     <th>Other</th>
-                                    <th>Dwell &lt;1m</th>
-                                    <th>Dwell 1-5m</th>
-                                    <th>Dwell 5-10m</th>
-                                    <th>Dwell 10m+</th>
-                                    <th>RSSI Imm</th>
-                                    <th>RSSI Near</th>
-                                    <th>RSSI Far</th>
-                                    <th>RSSI Rem</th>
-                                    <th>Probe RSSI</th>
-                                    <th>Cell RSSI</th>
+                                    <th>RSSI</th>
+                                    <th>&lt;1m</th>
+                                    <th>1-5m</th>
+                                    <th>5-10m</th>
+                                    <th>10m+</th>
+                                    <th>Imm</th>
+                                    <th>Near</th>
+                                    <th>Far</th>
+                                    <th>Remote</th>
+                                    <th>Avg</th>
+                                    <th>Min</th>
+                                    <th>Max</th>
+                                    <th>Cell</th>
+                                    <th>Signal</th>
                                 </tr>
                             </thead>
                             <tbody id="tableBody">
-                                <tr><td colspan="18" class="loading">Loading data...</td></tr>
+                                <tr><td colspan="23" class="loading">Loading data...</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -602,31 +629,48 @@
                     grouped[groupKey] = {
                         time: key,
                         device: r.device_id,
-                        impressions: 0, unique: 0,
+                        // WiFi counts
+                        impressions: 0, unique: 0, wifi_apple: 0,
+                        // BLE counts
                         ble_impressions: 0, ble_unique: 0, ble_apple: 0, ble_other: 0,
+                        ble_rssi: [],
+                        // Dwell time
                         dwell_0_1: 0, dwell_1_5: 0, dwell_5_10: 0, dwell_10plus: 0,
+                        // Proximity zones
                         rssi_immediate: 0, rssi_near: 0, rssi_far: 0, rssi_remote: 0,
-                        probe_rssi: [], cell_rssi: []
+                        // Signal strength
+                        probe_rssi_avg: [], probe_rssi_min: [], probe_rssi_max: [],
+                        cell_rssi: [], signal_dbm: []
                     };
                 }
 
                 const g = grouped[groupKey];
+                // WiFi
                 g.impressions += r.impressions || 0;
                 g.unique += r.unique_count || 0;
+                g.wifi_apple += r.apple_count || 0;
+                // BLE
                 g.ble_impressions += r.ble_impressions || 0;
                 g.ble_unique += r.ble_unique || 0;
                 g.ble_apple += r.ble_apple || 0;
                 g.ble_other += (r.ble_android || 0) + (r.ble_other || 0);
+                if (r.ble_rssi_avg) g.ble_rssi.push(r.ble_rssi_avg);
+                // Dwell
                 g.dwell_0_1 += r.dwell_0_1 || 0;
                 g.dwell_1_5 += r.dwell_1_5 || 0;
                 g.dwell_5_10 += r.dwell_5_10 || 0;
                 g.dwell_10plus += r.dwell_10plus || 0;
+                // Proximity
                 g.rssi_immediate += r.rssi_immediate || 0;
                 g.rssi_near += r.rssi_near || 0;
                 g.rssi_far += r.rssi_far || 0;
                 g.rssi_remote += r.rssi_remote || 0;
-                if (r.probe_rssi_avg) g.probe_rssi.push(r.probe_rssi_avg);
+                // Signal
+                if (r.probe_rssi_avg) g.probe_rssi_avg.push(r.probe_rssi_avg);
+                if (r.probe_rssi_min) g.probe_rssi_min.push(r.probe_rssi_min);
+                if (r.probe_rssi_max) g.probe_rssi_max.push(r.probe_rssi_max);
                 if (r.cell_rssi) g.cell_rssi.push(r.cell_rssi);
+                if (r.signal_dbm) g.signal_dbm.push(r.signal_dbm);
             });
 
             // Sort by time descending
@@ -638,33 +682,45 @@
             // Render table
             const tbody = document.getElementById('tableBody');
             if (rows.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="18" class="loading">No data for selected period</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="23" class="loading">No data for selected period</td></tr>';
                 return;
             }
 
-            tbody.innerHTML = rows.map(r => {
-                const avgProbe = r.probe_rssi.length ? Math.round(r.probe_rssi.reduce((a,b) => a+b, 0) / r.probe_rssi.length) : '-';
-                const avgCell = r.cell_rssi.length ? Math.round(r.cell_rssi.reduce((a,b) => a+b, 0) / r.cell_rssi.length) : '-';
+            // Helper to average arrays
+            const avg = arr => arr.length ? Math.round(arr.reduce((a,b) => a+b, 0) / arr.length) : '-';
+            const min = arr => arr.length ? Math.min(...arr) : '-';
+            const max = arr => arr.length ? Math.max(...arr) : '-';
 
+            tbody.innerHTML = rows.map(r => {
                 return `<tr>
                     <td>${r.time}</td>
                     <td>${r.device}</td>
+                    <!-- WiFi Probes -->
                     <td>${r.impressions}</td>
                     <td>${r.unique}</td>
+                    <td>${r.wifi_apple}</td>
+                    <!-- BLE Devices -->
                     <td>${r.ble_impressions}</td>
                     <td>${r.ble_unique}</td>
                     <td class="cell-highlight">${r.ble_apple}</td>
                     <td>${r.ble_other}</td>
+                    <td>${avg(r.ble_rssi)}</td>
+                    <!-- Dwell Time -->
                     <td>${r.dwell_0_1}</td>
                     <td>${r.dwell_1_5}</td>
                     <td>${r.dwell_5_10}</td>
                     <td>${r.dwell_10plus}</td>
+                    <!-- Proximity Zones -->
                     <td>${r.rssi_immediate}</td>
                     <td>${r.rssi_near}</td>
                     <td>${r.rssi_far}</td>
                     <td>${r.rssi_remote}</td>
-                    <td>${avgProbe}</td>
-                    <td>${avgCell}</td>
+                    <!-- Signal Strength -->
+                    <td>${avg(r.probe_rssi_avg)}</td>
+                    <td>${min(r.probe_rssi_min)}</td>
+                    <td>${max(r.probe_rssi_max)}</td>
+                    <td>${avg(r.cell_rssi)}</td>
+                    <td>${avg(r.signal_dbm)}</td>
                 </tr>`;
             }).join('');
         }
