@@ -76,7 +76,7 @@ static DeviceType classifyBleDevice(uint16_t manufacturerId) {
 #include "device_config.h"
 
 // Firmware version
-static const char* FIRMWARE_VERSION = "4.3";
+static const char* FIRMWARE_VERSION = "4.5";
 
 // SSL Configuration (disabled for now - AT+CCHOPEN failing)
 #define USE_SSL false
@@ -1134,18 +1134,21 @@ static bool sendReading(const char* timestamp, uint32_t impressions, uint32_t un
     ledSetStatus(LED_STATUS_TRANSMITTING);  // Orange pulsing during send
 
     // Build JSON payload with WiFi probes + BLE device counts (Apple vs Other)
+    // Added debug fields: ts=time_synced (0/1), bt=boot_timestamp
     char jsonPayload[768];
     snprintf(jsonPayload, sizeof(jsonPayload),
              "{\"d\":\"%s\",\"t\":\"%s\",\"i\":%lu,\"u\":%lu,"
              "\"probe_rssi_avg\":%d,\"probe_rssi_min\":%d,\"probe_rssi_max\":%d,\"cell_rssi\":%d,"
              "\"dwell_0_1\":%lu,\"dwell_1_5\":%lu,\"dwell_5_10\":%lu,\"dwell_10plus\":%lu,"
              "\"rssi_immediate\":%lu,\"rssi_near\":%lu,\"rssi_far\":%lu,\"rssi_remote\":%lu,"
-             "\"ble_i\":%lu,\"ble_u\":%lu,\"ble_apple\":%lu,\"ble_other\":%lu,\"ble_rssi_avg\":%d}",
+             "\"ble_i\":%lu,\"ble_u\":%lu,\"ble_apple\":%lu,\"ble_other\":%lu,\"ble_rssi_avg\":%d,"
+             "\"ts\":%d,\"bt\":%lu}",
              DEVICE_ID, timestamp, impressions, unique,
              probeRssiAvg, probeRssiMin, probeRssiMax, cellRssi,
              dwell_0_1, dwell_1_5, dwell_5_10, dwell_10plus,
              rssi_immediate, rssi_near, rssi_far, rssi_remote,
-             bleImpressions, bleUnique, bleApple, bleOther, bleRssiAvg);
+             bleImpressions, bleUnique, bleApple, bleOther, bleRssiAvg,
+             g_timeSynced ? 1 : 0, g_bootTimestamp);
 
     size_t jsonLen = strlen(jsonPayload);
 
@@ -1398,13 +1401,19 @@ static bool sendHeartbeat() {
         Serial.println("[HEARTBEAT] Success");
 
         // Parse server_time for timestamp synchronization
+        Serial.printf("[TIME DEBUG] Buffer len: %d\n", g_atBufferLen);
         char* jsonBody = strstr(g_atBuffer, "\r\n\r\n");
-        if (!jsonBody) jsonBody = strstr(g_atBuffer, "{");
+        if (!jsonBody) {
+            Serial.println("[TIME DEBUG] No \\r\\n\\r\\n found, looking for {");
+            jsonBody = strstr(g_atBuffer, "{");
+        }
 
         if (jsonBody) {
+            Serial.printf("[TIME DEBUG] JSON body found at offset %ld\n", jsonBody - g_atBuffer);
             // Look for server_time in response (ISO 8601 format)
             char* timeStart = strstr(jsonBody, "\"server_time\":\"");
             if (timeStart) {
+                Serial.println("[TIME DEBUG] Found server_time key");
                 timeStart += 15;  // Skip past "server_time":"
                 char* timeEnd = strchr(timeStart, '"');
                 if (timeEnd && (timeEnd - timeStart) < 30) {
@@ -1440,7 +1449,11 @@ static bool sendHeartbeat() {
                     } else {
                         Serial.printf("[TIME] Failed to parse: %s\n", serverTime);
                     }
+                } else {
+                    Serial.println("[TIME DEBUG] Could not find end quote for server_time value");
                 }
+            } else {
+                Serial.println("[TIME DEBUG] server_time key not found in response");
             }
 
             // Check for remote command in response (reuse jsonBody from time sync)
@@ -1473,6 +1486,8 @@ static bool sendHeartbeat() {
                     }
                 }
             }
+        } else {
+            Serial.println("[TIME DEBUG] No JSON body found in response");
         }
 
         // OTA rollback protection: After first successful communication, mark firmware valid
@@ -2121,7 +2136,7 @@ void setup() {
     delay(1000);
 
     // Set boot timestamp (would use NTP in production)
-    g_bootTimestamp = 1769601600;  // 2026-01-28T08:00:00Z - fallback until server sync
+    g_bootTimestamp = 1769587200;  // 2026-01-28T08:00:00Z - fallback until server sync
 
     // Perform WiFi geolocation scan FIRST (fast, before network init)
     Serial.println("[INIT] Performing geolocation scan...");

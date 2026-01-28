@@ -10,3 +10,7 @@
   from = "/api/*"
   to = "/.netlify/functions/:splat"
   status = 200
+
+# Scheduled function: Check for offline devices every hour
+[functions."nbiot-alerts"]
+  schedule = "@hourly"

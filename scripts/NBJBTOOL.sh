@@ -25,7 +25,7 @@ set -e
 # =============================================================================
 
 # Script version
-TOOL_VERSION="1.0.0"
+TOOL_VERSION="2.0.0"
 
 # Get script directory (works even if called from different location)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -41,6 +41,12 @@ DEVICE_CONFIG_FILE="$PROJECT_DIR/src/device_config.h"
 
 # PlatformIO path
 PIO_CMD="${HOME}/.platformio/penv/bin/pio"
+
+# Labels directory
+LABELS_DIR="$PROJECT_DIR/labels"
+
+# Activation portal base URL
+ACTIVATION_URL_BASE="https://datajamreports.com/activate"
 
 # Colors for output
 RED='\033[0;31m'
@@ -200,6 +206,289 @@ select_serial_port() {
     fi
 
     return 0
+}
+
+# =============================================================================
+# Label Generation Functions
+# =============================================================================
+
+# Generate a 4-digit PIN
+generate_pin() {
+    printf "%04d" $((RANDOM % 10000))
+}
+
+# Create labels directory if it doesn't exist
+ensure_labels_dir() {
+    if [[ ! -d "$LABELS_DIR" ]]; then
+        mkdir -p "$LABELS_DIR"
+        print_info "Created labels directory: $LABELS_DIR"
+    fi
+}
+
+# Generate QR code (requires qrencode)
+generate_qr_code() {
+    local device_id="$1"
+    local activation_url="${ACTIVATION_URL_BASE}/${device_id}"
+    local qr_file="$LABELS_DIR/${device_id}_qr.png"
+
+    if check_command qrencode; then
+        qrencode -o "$qr_file" -s 8 -m 2 "$activation_url" 2>/dev/null
+        if [[ $? -eq 0 ]]; then
+            print_success "QR code saved: $qr_file"
+            return 0
+        fi
+    else
+        print_warning "qrencode not installed - skipping QR generation"
+        echo "       Install with: brew install qrencode (macOS)"
+    fi
+    return 1
+}
+
+# Generate printable HTML label (3"x2.25" thermal label size)
+generate_label_html() {
+    local device_id="$1"
+    local device_pin="$2"
+    local activation_url="${ACTIVATION_URL_BASE}/${device_id}"
+    local label_file="$LABELS_DIR/${device_id}_label.html"
+    local qr_file="${device_id}_qr.png"
+
+    cat > "$label_file" << 'LABEL_EOF'
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>DEVICE_ID_PLACEHOLDER - Device Label</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    @page {
+      size: 3in 2.25in;
+      margin: 0;
+    }
+
+    body {
+      font-family: 'Poppins', -apple-system, sans-serif;
+      width: 3in;
+      height: 2.25in;
+      padding: 0.15in;
+      background: #0A0C11;
+      color: #FEFAF9;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 0.08in;
+    }
+
+    .logo {
+      font-weight: 500;
+      font-size: 9px;
+      letter-spacing: 0.5px;
+      opacity: 0.6;
+    }
+
+    .device-id {
+      font-size: 18px;
+      font-weight: 700;
+      background: linear-gradient(90deg, #E62F6E, #E94B52);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .main {
+      display: flex;
+      gap: 0.12in;
+      flex: 1;
+    }
+
+    .qr-section {
+      width: 0.7in;
+      height: 0.7in;
+      background: white;
+      border-radius: 4px;
+      padding: 3px;
+      flex-shrink: 0;
+    }
+
+    .qr-section img {
+      width: 100%;
+      height: 100%;
+    }
+
+    .qr-placeholder {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 8px;
+      color: #333;
+      text-align: center;
+    }
+
+    .info-section {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .steps {
+      font-size: 8px;
+      line-height: 1.4;
+    }
+
+    .steps ol {
+      padding-left: 12px;
+      margin-top: 2px;
+    }
+
+    .steps li {
+      margin-bottom: 1px;
+    }
+
+    .pin-box {
+      background: rgba(21, 224, 188, 0.15);
+      border: 1px solid #15E0BC;
+      border-radius: 4px;
+      padding: 4px 8px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 4px;
+    }
+
+    .pin-label {
+      font-size: 7px;
+      color: rgba(254, 250, 249, 0.6);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .pin-value {
+      font-size: 14px;
+      font-weight: 600;
+      color: #15E0BC;
+      letter-spacing: 2px;
+      font-family: monospace;
+    }
+
+    .footer {
+      font-size: 6.5px;
+      color: rgba(254, 250, 249, 0.5);
+      text-align: center;
+      padding-top: 0.06in;
+      border-top: 1px solid rgba(254, 250, 249, 0.1);
+      margin-top: 0.06in;
+    }
+
+    @media print {
+      body {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <span class="logo">datajam</span>
+    <span class="device-id">DEVICE_ID_PLACEHOLDER</span>
+  </div>
+
+  <div class="main">
+    <div class="qr-section">
+      <img src="QR_FILE_PLACEHOLDER" alt="QR Code" onerror="this.outerHTML='<div class=qr-placeholder>Scan QR<br>from PNG</div>'">
+    </div>
+
+    <div class="info-section">
+      <div class="steps">
+        <strong>Quick Setup:</strong>
+        <ol>
+          <li>Plug in USB-C power</li>
+          <li>Wait for green light</li>
+          <li>Scan QR to name device</li>
+        </ol>
+      </div>
+
+      <div class="pin-box">
+        <span class="pin-label">PIN</span>
+        <span class="pin-value">PIN_PLACEHOLDER</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+    Scan QR for status &bull; hello@data-jam.com
+  </div>
+</body>
+</html>
+LABEL_EOF
+
+    # Replace placeholders
+    sed -i '' "s/DEVICE_ID_PLACEHOLDER/${device_id}/g" "$label_file" 2>/dev/null || \
+        sed -i "s/DEVICE_ID_PLACEHOLDER/${device_id}/g" "$label_file"
+    sed -i '' "s/PIN_PLACEHOLDER/${device_pin}/g" "$label_file" 2>/dev/null || \
+        sed -i "s/PIN_PLACEHOLDER/${device_pin}/g" "$label_file"
+    sed -i '' "s|QR_FILE_PLACEHOLDER|${qr_file}|g" "$label_file" 2>/dev/null || \
+        sed -i "s|QR_FILE_PLACEHOLDER|${qr_file}|g" "$label_file"
+
+    print_success "Label HTML saved: $label_file"
+    return 0
+}
+
+# Store PIN in backend via update endpoint
+store_device_pin() {
+    local device_id="$1"
+    local pin="$2"
+
+    local response
+    response=$(curl -s -X PUT "$BACKEND_URL/api/device/$device_id/pin" \
+        -H "Authorization: Bearer $ADMIN_KEY" \
+        -H "Content-Type: application/json" \
+        -d "{\"pin\": \"$pin\"}" 2>/dev/null)
+
+    if echo "$response" | grep -q '"success"'; then
+        return 0
+    fi
+    return 1
+}
+
+# Generate all label assets for a device
+generate_device_label() {
+    local device_id="$1"
+    local device_pin="$2"
+
+    print_step "Generating label assets for $device_id..."
+
+    ensure_labels_dir
+
+    # Generate QR code
+    generate_qr_code "$device_id"
+
+    # Generate HTML label
+    generate_label_html "$device_id" "$device_pin"
+
+    echo ""
+    print_success "Label assets ready in: $LABELS_DIR"
+    print_info "Activation URL: ${ACTIVATION_URL_BASE}/${device_id}"
+    print_info "Device PIN: $device_pin"
+    echo ""
+    echo "To print:"
+    echo "  1. Open $LABELS_DIR/${device_id}_label.html in browser"
+    echo "  2. Print at actual size (3\" x 2.25\")"
+    echo ""
 }
 
 # =============================================================================
@@ -653,13 +942,28 @@ do_flash_preregistered() {
     echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") | $device_id | flashed" >> "$log_file"
     print_success "Logged to provisioning.log (token NOT saved for security)"
 
+    # Generate PIN and labels
+    local DEVICE_PIN
+    DEVICE_PIN=$(generate_pin)
+
+    print_step "Storing PIN in backend..."
+    if store_device_pin "$device_id" "$DEVICE_PIN"; then
+        print_success "PIN stored successfully"
+    else
+        print_warning "Could not store PIN - backend may need update"
+    fi
+
+    # Generate label assets
+    generate_device_label "$device_id" "$DEVICE_PIN"
+
     echo ""
     print_success "Device $device_id flashed successfully!"
     echo ""
     echo "Next steps:"
     echo "  1. Power cycle the device"
     echo "  2. Watch serial output to verify boot (option 8)"
-    echo "  3. Check backend for heartbeat (option 6)"
+    echo "  3. Print label from: $LABELS_DIR/${device_id}_label.html"
+    echo "  4. Attach label to device"
     echo ""
 }
 
@@ -730,6 +1034,26 @@ do_full_provisioning() {
     # Verify device
     verify_device "$SELECTED_PORT" "$device_id"
 
+    # Generate PIN and labels
+    local DEVICE_PIN
+    DEVICE_PIN=$(generate_pin)
+
+    print_step "Storing PIN in backend..."
+    if store_device_pin "$device_id" "$DEVICE_PIN"; then
+        print_success "PIN stored successfully"
+    else
+        print_warning "Could not store PIN - backend may need update"
+    fi
+
+    # Generate label assets
+    generate_device_label "$device_id" "$DEVICE_PIN"
+
+    # Log provisioning (NO TOKEN for security - token only exists on device)
+    local log_file="$PROJECT_DIR/provisioning.log"
+    echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") | $device_id | provisioned+flashed | PIN=$DEVICE_PIN" >> "$log_file"
+    print_success "Logged to provisioning.log"
+    print_info "Token is NOT saved locally (security) - it only exists on the device"
+
     echo ""
     print_success "Provisioning complete for $device_id"
     echo ""
@@ -737,16 +1061,15 @@ do_full_provisioning() {
     echo "  Device ID: $device_id"
     echo "  Token: ${DEVICE_TOKEN:0:20}..."
     echo "  Port: $SELECTED_PORT"
+    echo "  PIN: $DEVICE_PIN"
     echo ""
     echo "The device should now be sending data to the backend."
-    echo "Use option 7 to monitor serial output and verify operation."
     echo ""
-
-    # Log provisioning (NO TOKEN for security - token only exists on device)
-    local log_file="$PROJECT_DIR/provisioning.log"
-    echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") | $device_id | provisioned+flashed" >> "$log_file"
-    print_success "Logged to provisioning.log"
-    print_info "Token is NOT saved locally (security) - it only exists on the device"
+    echo "Next steps:"
+    echo "  1. Print label from: $LABELS_DIR/${device_id}_label.html"
+    echo "  2. Attach label to device"
+    echo "  3. Use option 8 to monitor serial output"
+    echo ""
 
     return 0
 }
