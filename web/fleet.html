@@ -397,6 +397,235 @@
         .reading-time { color: var(--text-secondary); }
         .reading-value { color: var(--text-white); font-weight: 500; }
 
+        /* Device Health Section */
+        .health-section {
+            margin-top: 32px;
+        }
+
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .section-title {
+            font-size: 18px;
+            font-weight: 500;
+            color: var(--text-white);
+        }
+
+        .health-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+            gap: 16px;
+        }
+
+        .health-card {
+            background: var(--bg-surface);
+            border-radius: var(--radius-md);
+            border: 1px solid rgba(255,255,255,0.04);
+            padding: 20px;
+            transition: border-color 0.2s ease;
+        }
+
+        .health-card:hover {
+            border-color: rgba(255,255,255,0.1);
+        }
+
+        .health-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 16px;
+        }
+
+        .health-device-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .health-status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .health-status-dot.online {
+            background: var(--chart-teal);
+            box-shadow: 0 0 8px var(--chart-teal);
+        }
+
+        .health-status-dot.warning {
+            background: var(--chart-yellow);
+            box-shadow: 0 0 8px rgba(237, 186, 6, 0.4);
+        }
+
+        .health-status-dot.offline {
+            background: var(--dj-orange);
+            box-shadow: 0 0 8px rgba(233, 75, 82, 0.4);
+        }
+
+        .health-device-name {
+            font-size: 15px;
+            font-weight: 500;
+            color: var(--text-white);
+        }
+
+        .health-device-id {
+            font-size: 11px;
+            color: var(--text-muted);
+            font-family: monospace;
+        }
+
+        .health-badge {
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+
+        .health-badge.online {
+            background: rgba(21, 224, 188, 0.15);
+            color: var(--chart-teal);
+        }
+
+        .health-badge.warning {
+            background: rgba(237, 186, 6, 0.15);
+            color: var(--chart-yellow);
+        }
+
+        .health-badge.offline {
+            background: rgba(233, 75, 82, 0.15);
+            color: var(--dj-orange);
+        }
+
+        .health-metrics {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+        }
+
+        .health-metric {
+            background: var(--bg-deep);
+            border-radius: var(--radius-sm);
+            padding: 12px;
+        }
+
+        .health-metric-label {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+        }
+
+        .health-metric-value {
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--text-white);
+        }
+
+        .health-metric-value.good { color: var(--chart-teal); }
+        .health-metric-value.warn { color: var(--chart-yellow); }
+        .health-metric-value.bad { color: var(--dj-orange); }
+
+        .signal-bar {
+            height: 4px;
+            background: var(--bg-elevated);
+            border-radius: 2px;
+            margin-top: 6px;
+            overflow: hidden;
+        }
+
+        .signal-bar-fill {
+            height: 100%;
+            border-radius: 2px;
+            transition: width 0.3s ease;
+        }
+
+        .health-location {
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid rgba(255,255,255,0.04);
+            font-size: 12px;
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .health-location svg {
+            width: 14px;
+            height: 14px;
+            opacity: 0.6;
+        }
+
+        /* Command Buttons */
+        .command-buttons {
+            display: flex;
+            gap: 8px;
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px solid rgba(255,255,255,0.06);
+        }
+
+        .cmd-btn {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            padding: 10px 12px;
+            font-family: inherit;
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text-primary);
+            background: var(--bg-elevated);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .cmd-btn:hover {
+            background: var(--bg-surface);
+            border-color: rgba(255,255,255,0.15);
+            color: var(--text-white);
+        }
+
+        .cmd-btn:active {
+            transform: scale(0.98);
+        }
+
+        .cmd-btn.loading {
+            opacity: 0.6;
+            pointer-events: none;
+        }
+
+        .cmd-btn.success {
+            background: rgba(21, 224, 188, 0.15);
+            border-color: var(--chart-teal);
+            color: var(--chart-teal);
+        }
+
+        .cmd-btn svg {
+            width: 14px;
+            height: 14px;
+        }
+
+        .cmd-btn.send svg { stroke: var(--chart-teal); }
+        .cmd-btn.reboot svg { stroke: var(--chart-yellow); }
+        .cmd-btn.locate svg { stroke: var(--chart-purple); }
+
+        .cmd-btn:hover.send svg { stroke: var(--chart-teal); }
+        .cmd-btn:hover.reboot svg { stroke: var(--chart-yellow); }
+        .cmd-btn:hover.locate svg { stroke: var(--chart-purple); }
+
         /* Footer */
         .footer {
             text-align: center;
@@ -498,6 +727,16 @@
             </div>
         </div>
 
+        <!-- Device Health Section -->
+        <div class="health-section">
+            <div class="section-header">
+                <h2 class="section-title">Device Health</h2>
+            </div>
+            <div class="health-grid" id="healthGrid">
+                <div class="loading"><div class="spinner"></div> Loading device health...</div>
+            </div>
+        </div>
+
         <footer class="footer">
             Powered by DataJam • Updates every 5 minutes
         </footer>
@@ -578,6 +817,82 @@
             document.getElementById('statOnline').textContent = stats.online || 0;
             document.getElementById('statWarning').textContent = stats.warning || 0;
             document.getElementById('statOffline').textContent = stats.offline || 0;
+        }
+
+        function getSignalQuality(dbm) {
+            if (!dbm || dbm <= -999) return { label: 'Unknown', class: '', percent: 0 };
+            if (dbm >= -65) return { label: 'Excellent', class: 'good', percent: 100 };
+            if (dbm >= -75) return { label: 'Good', class: 'good', percent: 75 };
+            if (dbm >= -85) return { label: 'Fair', class: 'warn', percent: 50 };
+            return { label: 'Poor', class: 'bad', percent: 25 };
+        }
+
+        function getSignalColor(dbm) {
+            if (!dbm || dbm <= -999) return '#5A5856';
+            if (dbm >= -65) return '#15E0BC';
+            if (dbm >= -75) return '#78C534';
+            if (dbm >= -85) return '#EDBA06';
+            return '#E94B52';
+        }
+
+        function updateHealthGrid(devices) {
+            const grid = document.getElementById('healthGrid');
+            const jbnbDevices = devices.filter(d => d.device_id.startsWith('JBNB'));
+
+            if (jbnbDevices.length === 0) {
+                grid.innerHTML = '<div style="padding: 24px; text-align: center; color: var(--text-muted);">No devices configured</div>';
+                return;
+            }
+
+            grid.innerHTML = jbnbDevices.map(d => {
+                const signal = getSignalQuality(d.last_signal_dbm);
+                const signalColor = getSignalColor(d.last_signal_dbm);
+
+                return `
+                    <div class="health-card">
+                        <div class="health-card-header">
+                            <div class="health-device-info">
+                                <div class="health-status-dot ${d.connection_status}"></div>
+                                <div>
+                                    <div class="health-device-name">${d.location_name || d.device_id}</div>
+                                    <div class="health-device-id">${d.device_id}</div>
+                                </div>
+                            </div>
+                            <div class="health-badge ${d.connection_status}">${d.connection_status}</div>
+                        </div>
+                        <div class="health-metrics">
+                            <div class="health-metric">
+                                <div class="health-metric-label">Firmware</div>
+                                <div class="health-metric-value">v${d.firmware_version || '—'}</div>
+                            </div>
+                            <div class="health-metric">
+                                <div class="health-metric-label">Last Seen</div>
+                                <div class="health-metric-value ${d.connection_status === 'online' ? 'good' : d.connection_status === 'warning' ? 'warn' : 'bad'}">${d.last_seen_ago || 'Never'}</div>
+                            </div>
+                            <div class="health-metric">
+                                <div class="health-metric-label">Signal Strength</div>
+                                <div class="health-metric-value ${signal.class}">${d.last_signal_dbm ? d.last_signal_dbm + ' dBm' : '—'}</div>
+                                <div class="signal-bar">
+                                    <div class="signal-bar-fill" style="width: ${signal.percent}%; background: ${signalColor};"></div>
+                                </div>
+                            </div>
+                            <div class="health-metric">
+                                <div class="health-metric-label">Signal Quality</div>
+                                <div class="health-metric-value ${signal.class}">${signal.label}</div>
+                            </div>
+                        </div>
+                        ${d.location_name ? `
+                            <div class="health-location">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
+                                    <circle cx="12" cy="10" r="3"/>
+                                </svg>
+                                ${d.location_name}
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            }).join('');
         }
 
         function updateDevicesList(devices) {
@@ -672,6 +987,29 @@
                                     </div>
                                 </div>
 
+                                <div class="command-buttons">
+                                    <button class="cmd-btn send" onclick="sendCommand('${device.device_id}', 'send_now', this)">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
+                                        </svg>
+                                        Send Now
+                                    </button>
+                                    <button class="cmd-btn locate" onclick="sendCommand('${device.device_id}', 'geolocate', this)">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <circle cx="12" cy="12" r="10"/>
+                                            <path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>
+                                        </svg>
+                                        Geolocate
+                                    </button>
+                                    <button class="cmd-btn reboot" onclick="sendCommand('${device.device_id}', 'reboot', this)">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <path d="M1 4v6h6M23 20v-6h-6"/>
+                                            <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
+                                        </svg>
+                                        Reboot
+                                    </button>
+                                </div>
+
                                 <div style="padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.06); font-size: 12px; color: var(--text-muted);">
                                     <div>Device ID: ${device.device_id}</div>
                                     <div>Firmware: v${device.firmware_version || '—'}</div>
@@ -692,6 +1030,39 @@
             document.getElementById('modal').innerHTML = '';
         }
 
+        async function sendCommand(deviceId, command, btn) {
+            const originalText = btn.innerHTML;
+            btn.classList.add('loading');
+            btn.innerHTML = '<div class="spinner" style="width:14px;height:14px;margin:0;border-width:2px;"></div>';
+
+            try {
+                const res = await fetch(`${API_BASE}/device/${deviceId}/command`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ command })
+                });
+
+                const data = await res.json();
+
+                if (res.ok) {
+                    btn.classList.remove('loading');
+                    btn.classList.add('success');
+                    btn.innerHTML = '✓ Sent';
+
+                    setTimeout(() => {
+                        btn.classList.remove('success');
+                        btn.innerHTML = originalText;
+                    }, 2000);
+                } else {
+                    throw new Error(data.error || 'Command failed');
+                }
+            } catch (err) {
+                btn.classList.remove('loading');
+                btn.innerHTML = originalText;
+                alert(`Failed: ${err.message}`);
+            }
+        }
+
         async function loadFleet() {
             try {
                 const res = await fetch(`${API_BASE}/devices`);
@@ -700,6 +1071,7 @@
                 updateStats(data.stats || {});
                 updateDevicesList(data.devices || []);
                 updateMap(data.devices || []);
+                updateHealthGrid(data.devices || []);
 
             } catch (err) {
                 console.error('Failed to load fleet:', err);

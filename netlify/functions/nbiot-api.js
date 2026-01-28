@@ -1,6 +1,7 @@
 /**
- * NB-IoT Device Management API v1.2.0
+ * NB-IoT Device Management API v1.3.0
  * Standalone admin portal for NB-IoT JamBox fleet management.
+ * v1.3.0: Added remote command support (send_now, reboot, geolocate).
  * v1.2.0: Added BLE device counting fields for accurate OS detection.
  *
  * Endpoints:
@@ -11,6 +12,7 @@
  * - GET  /nbiot-api/hourly          Hourly aggregated data (query: device_id, days)
  * - POST /nbiot-api/device/register Register new device (proxy to Linode)
  * - POST /nbiot-api/device/:id/regenerate  Regenerate token (proxy to Linode)
+ * - POST /nbiot-api/device/:id/command     Send command to device (send_now, reboot, geolocate)
  */
 
 const https = require('https');
@@ -509,6 +511,51 @@ exports.handler = async (event) => {
     }
 
     // =====================
+    // POST /device/:id/command - Send command to device
+    // Commands: send_now, reboot, geolocate
+    // =====================
+    if (method === 'POST' && segments[0] === 'device' && segments[1] && segments[2] === 'command') {
+      if (!NBIOT_ADMIN_KEY) {
+        return { statusCode: 500, headers, body: JSON.stringify({ error: 'Linode admin key not configured' }) };
+      }
+
+      const deviceId = segments[1].toUpperCase();
+      const body = JSON.parse(event.body || '{}');
+
+      const validCommands = ['send_now', 'reboot', 'geolocate'];
+      if (!body.command || !validCommands.includes(body.command)) {
+        return {
+          statusCode: 400,
+          headers,
+          body: JSON.stringify({ error: `Invalid command. Valid commands: ${validCommands.join(', ')}` })
+        };
+      }
+
+      const response = await linodeRequest('POST', `/api/device/${deviceId}/command`, {
+        command: body.command
+      });
+
+      if (response.statusCode === 200) {
+        return {
+          statusCode: 200,
+          headers,
+          body: JSON.stringify({
+            success: true,
+            device_id: deviceId,
+            command: body.command,
+            message: response.data?.message || `Command '${body.command}' queued for ${deviceId}`
+          })
+        };
+      } else {
+        return {
+          statusCode: response.statusCode,
+          headers,
+          body: JSON.stringify({ error: response.data?.error || 'Command failed' })
+        };
+      }
+    }
+
+    // =====================
     // Unknown route
     // =====================
     return {
@@ -516,7 +563,7 @@ exports.handler = async (event) => {
       headers,
       body: JSON.stringify({
         error: 'Not found',
-        available: ['GET /devices', 'GET /device/:id', 'GET /readings', 'GET /stats', 'GET /hourly', 'POST /device/register', 'POST /device/:id/regenerate']
+        available: ['GET /devices', 'GET /device/:id', 'GET /readings', 'GET /stats', 'GET /hourly', 'POST /device/register', 'POST /device/:id/regenerate', 'POST /device/:id/command']
       })
     };
 
