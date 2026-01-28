@@ -497,6 +497,7 @@
             const devicesHtml = devices.map(d => {
                 const isSelected = selectedDevices.size === 0 || selectedDevices.has(d.device_id);
                 const displayName = d.location_name || d.device_id;
+                const fw = d.firmware_version ? `v${d.firmware_version}` : '-';
                 return `
                 <div class="device ${isSelected ? 'selected' : ''}" data-id="${d.device_id}">
                     <div class="device-checkbox"></div>
@@ -505,7 +506,7 @@
                             <span class="device-id">${displayName}</span>
                             <span class="device-status ${d.connection_status}"></span>
                         </div>
-                        <div class="device-meta">${d.device_id} &middot; ${d.last_seen_ago || 'Never'} &middot; ${d.last_signal_dbm || '-'} dBm</div>
+                        <div class="device-meta">${d.device_id} &middot; ${fw} &middot; ${d.last_seen_ago || 'Never'} &middot; ${d.last_signal_dbm || '-'} dBm</div>
                     </div>
                 </div>
             `}).join('');
