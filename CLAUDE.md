@@ -25,17 +25,17 @@ Use these agents for specific tasks:
 
 ## Current Status (2026-01-27)
 
-**STATUS: FULL STACK OPERATIONAL** - v4.0 firmware with BLE device counting!
+**STATUS: FULL STACK OPERATIONAL** - v4.1 firmware with BLE device counting!
 
 ### Active Devices
 | Device ID | Firmware | Location | Status |
 |-----------|----------|----------|--------|
-| JBNB0001 | **v3.1** | Dev Unit 1 | Online (needs v4.0 update) |
-| JBNB0002 | **v4.0** | Home - Dev Unit | Online |
+| JBNB0001 | **v3.1** | Dev Unit 1 | Online (needs v4.1 update) |
+| JBNB0002 | **v4.1** | Home - Dev Unit | Online |
 
 ### Isolated Test Environment Architecture
 ```
-JBNB Device (firmware v4.0)
+JBNB Device (firmware v4.1)
     ↓ HTTP over NB-IoT cellular (T-Mobile)
 Hologram
     ↓
@@ -87,7 +87,7 @@ curl -X POST "..." -d '{"command":"geolocate"}'
 ```
 Commands work on every 5-minute reading as well as daily heartbeat (v3.0 fix).
 
-### Firmware Version: 4.0
+### Firmware Version: 4.1
 ### Backend Version: 2.6
 
 ### Dwell Time Tracking (v3.0)
@@ -271,6 +271,18 @@ Major update: BLE device counting for OS detection.
 | **96-reading cache** | Circular buffer for offline resilience |
 
 **To flash:** Connect device, run `./scripts/NBJBTOOL.sh`, option 1, enter device ID.
+
+### Firmware v4.1 (2026-01-28)
+Minor update: BLE OS counts now deduplicated.
+
+| Feature | Description |
+|---------|-------------|
+| **BLE OS Deduplication** | `ble_apple` and `ble_other` now deduplicated per-minute (like `ble_unique`) |
+
+**Before v4.1:** 1 iPhone sending 50 BLE ads = `ble_apple: 50` (raw)
+**After v4.1:** 1 iPhone sending 50 BLE ads = `ble_apple: 1` (deduplicated)
+
+`ble_impressions` remains raw count (total advertisements received).
 
 ---
 
