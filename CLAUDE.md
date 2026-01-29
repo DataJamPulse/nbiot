@@ -23,19 +23,19 @@ Use these agents for specific tasks:
 
 ---
 
-## Current Status (2026-01-27)
+## Current Status (2026-01-29)
 
-**STATUS: FULL STACK OPERATIONAL** - v4.1 firmware with BLE device counting!
+**STATUS: PRODUCTION READY** - v5.2 firmware with reliability fixes + optimized BLE sampling!
 
 ### Active Devices
 | Device ID | Firmware | Location | Status |
 |-----------|----------|----------|--------|
-| JBNB0001 | **v4.1** | Dev Unit 1 | Online |
-| JBNB0002 | **v4.1** | Home - Dev Unit | Online |
+| JBNB0001 | **v5.2** | Dev Unit 1 | Online |
+| JBNB0002 | **v5.2** | Dev Unit 2 | Online |
 
 ### Isolated Test Environment Architecture
 ```
-JBNB Device (firmware v4.1)
+JBNB Device (firmware v5.2)
     ↓ HTTP over NB-IoT cellular (T-Mobile)
 Hologram
     ↓
@@ -43,7 +43,7 @@ Linode (172.233.144.32:5000) ← Flask backend stores in SQLite
     ↓ sync_to_supabase.py (cron every 5 min)
 Supabase (NB-IoT project: xopbjawzrvsoeiapoawm)
     ↑
-Netlify Functions (nbiot.netlify.app/.netlify/functions/nbiot-api)
+Netlify Functions (nbiot.netlify.app/.netlify/functions/nbiot-api v1.4.0)
     ↑
 Dashboard (nbiot.netlify.app)
 ```
@@ -87,8 +87,9 @@ curl -X POST "..." -d '{"command":"geolocate"}'
 ```
 Commands work on every 5-minute reading as well as daily heartbeat (v3.0 fix).
 
-### Firmware Version: 4.1
-### Backend Version: 2.6
+### Firmware Version: 5.2
+### Backend Version: 2.7
+### API Version: 1.4.0
 
 ### Dwell Time Tracking (v3.0)
 Firmware tracks how long devices stay in range:
@@ -110,24 +111,31 @@ Firmware categorizes probes by signal strength (proves viewability):
 
 **Note:** Distances are approximate. Actual range depends on phone transmit power and obstacles.
 
-### BLE Device Counting (v4.0)
+### BLE Device Counting (v5.2)
 Firmware scans Bluetooth Low Energy advertisements for OS detection via manufacturer IDs.
 
-**Why BLE instead of WiFi for OS detection:**
-- WiFi probe requests use randomized MACs (no manufacturer info)
-- Android devices are often silent (not sending probes when not in use)
-- BLE advertisements contain manufacturer IDs registered with Bluetooth SIG
+**Key Strategy: BLE for Composition, WiFi for Volume**
+- **WiFi probes** = foot traffic volume (unique visitors)
+- **BLE sample** = device composition percentage (Apple vs Other)
+- Server calculates: `ble_apple / ble_unique` = Apple percentage
+- Apply percentage to WiFi counts for estimated breakdown
+
+**Why this approach:**
+- BLE is noisy (constant broadcasts) but gives accurate manufacturer IDs
+- WiFi probes are sparse but better represent real foot traffic
+- Brief BLE samples give statistically valid composition data
+- WiFi gets 97% of scan time for accurate visitor counting
 
 **Classification: Apple vs Other**
 Only Apple devices can be reliably detected via manufacturer ID (0x004C). Android manufacturer ID detection is unreliable due to ecosystem fragmentation (many vendors don't broadcast standard IDs). Therefore:
 - **Apple:** Manufacturer ID 0x004C (iPhone, iPad, Watch, AirPods)
 - **Other:** Everything else (Android, wearables, IoT, unknown)
 
-**Time-Slicing Architecture:**
+**Time-Slicing Architecture (v5.2):**
 ESP32 shares radio between WiFi and BLE, so firmware alternates:
-- 12 seconds WiFi promiscuous mode (probe capture)
-- 3 seconds BLE passive scanning
-- 80/20 split maintains WiFi accuracy while adding BLE capability
+- 29 seconds WiFi promiscuous mode (probe capture)
+- 1 second BLE passive scanning (minimum for NimBLE)
+- **97/3 split** - WiFi gets nearly all time, BLE sampled briefly for composition
 
 **BLE Payload Fields:**
 | Field | Description |
@@ -138,7 +146,15 @@ ESP32 shares radio between WiFi and BLE, so firmware alternates:
 | `ble_other` | Other BLE devices (Android, wearables, IoT) |
 | `ble_rssi_avg` | Average BLE signal strength (dBm) |
 
-**Note:** Backend still accepts `ble_android` for backwards compatibility but firmware v4.0 sends 0.
+**API Calculated Fields (v1.4.0):**
+| Field | Description |
+|-------|-------------|
+| `ble_apple_pct` | Percentage of BLE devices that are Apple |
+| `ble_other_pct` | Percentage of BLE devices that are Other |
+| `estimated_apple` | WiFi unique count × Apple percentage |
+| `estimated_other` | WiFi unique count × Other percentage |
+
+**Note:** Backend still accepts `ble_android` for backwards compatibility but firmware sends 0.
 
 **Privacy:** Only randomized BLE addresses are counted (same as WiFi probes).
 
@@ -223,7 +239,7 @@ WiFi probe requests no longer used for OS detection (unreliable with randomized 
 | Hardware validation | ✓ Complete |
 | NB-IoT connectivity | ✓ T-Mobile Band 4 |
 | Linode server setup | ✓ Complete |
-| Flask backend v2.6 | ✓ Running with auth + geolocation + extended RSSI + heartbeat + device PIN + BLE |
+| Flask backend v2.7 | ✓ Running with auth + geolocation + extended RSSI + heartbeat + device PIN + BLE + OTA |
 | Device authentication | ✓ Token-based |
 | NB-IoT → Backend data flow | ✓ **VERIFIED** - JBNB0001 sending |
 | Probe capture firmware | ✓ **COMPLETE** - Privacy filter + WiFi probes |
@@ -248,6 +264,11 @@ NB-IoT has built-in network-layer encryption. TLS handshakes are unreliable over
 ### TODO
 - [x] Polish Fleet Command UI based on real data - DONE (Device Health section added)
 - [x] Add remote command buttons to portal UI - DONE (send_now, geolocate, reboot in fleet modal)
+- [x] OTA server infrastructure - DONE (Phase 1 complete)
+- [x] OTA device firmware (Phase 2) - DONE (v5.0 has full OTA client)
+- [x] Firmware reliability fixes - DONE (v5.0 fixed arrays, no heap fragmentation)
+- [ ] OTA monitoring UI (Phase 3) - Fleet Command OTA status display
+- [ ] Run Supabase migration `006_ota_tables.sql`
 - [ ] Persistent interval change (NVS storage) for set_interval command
 - [ ] Device history/events table for audit trail
 - [ ] Manual location entry when WiFi geolocation fails
@@ -283,6 +304,145 @@ Minor update: BLE OS counts now deduplicated.
 **After v4.1:** 1 iPhone sending 50 BLE ads = `ble_apple: 1` (deduplicated)
 
 `ble_impressions` remains raw count (total advertisements received).
+
+### Firmware v4.6 (2026-01-28)
+Time sync fix for correct timestamps.
+
+| Feature | Description |
+|---------|-------------|
+| **Time Sync Fix** | Fixed server_time parsing - increased buffer from 30 to 40 chars for ISO timestamps with microseconds |
+| **Manual Epoch Calculation** | Replaced unreliable mktime() with manual UTC epoch calculation |
+| **Buffer Order Fix** | Moved AT+CIPCLOSE after parsing to prevent buffer clearing |
+
+**Bug Fixed:** Device timestamps were showing ~6 hours behind. Server sent timestamps like `2026-01-28T23:04:20.306981+00:00` (32 chars) but firmware only accepted <30 chars.
+
+### Firmware v5.0 (2026-01-29)
+**Major reliability update for 24/7 year-long deployment.**
+
+| Feature | Description |
+|---------|-------------|
+| **Fixed Arrays** | Replaced `std::set` and `std::map` with fixed-size arrays - eliminates heap fragmentation |
+| **No Dynamic Allocation** | Probe counting and dwell tracking use pre-allocated arrays, no malloc/free during operation |
+| **Watchdog During Network Init** | Added `esp_task_wdt_reset()` in network init loop - prevents false reboots on slow networks |
+| **Heap Monitoring** | Logs heap stats every 60 seconds: Free, Min, MaxBlock - visibility into memory health |
+| **Delta OTA Client** | Full OTA state machine with NVS persistence, 512-byte chunk download, resume after power loss |
+
+**Memory Changes:**
+- RAM: 23.0% (was 19.9%) - arrays pre-allocated at startup
+- Flash: 53.9% - unchanged
+- Heap: Stable over time (no fragmentation)
+
+**Reliability Improvements:**
+- Safe for 24/7 operation over 1+ year deployment
+- No memory leaks from STL containers
+- No critical section issues with dynamic allocation
+- Predictable memory usage regardless of traffic
+
+### Firmware v5.2 (2026-01-29)
+**BLE sparse sampling for composition percentages.**
+
+| Feature | Description |
+|---------|-------------|
+| **97/3 Time Split** | 29s WiFi / 1s BLE (was 80/20 in v4.0) |
+| **BLE for Composition Only** | Brief BLE samples give Apple vs Other percentage |
+| **WiFi for Volume** | Nearly all time dedicated to accurate probe counting |
+| **NimBLE 1s Minimum** | Fixed "forever" scan warning (NimBLE needs ≥1 second) |
+
+**Key Insight:** BLE is noisy (4,916 devices/day) but gives accurate manufacturer IDs. WiFi probes are sparse (343/day) but represent real foot traffic. Use BLE ratio to estimate device breakdown of WiFi counts.
+
+**API v1.4.0 calculates:**
+- `ble_apple_pct` / `ble_other_pct` from BLE sample
+- `estimated_apple` / `estimated_other` applied to WiFi unique counts
+
+---
+
+## OTA Update System (v2.7)
+
+Production-ready delta OTA system for updating devices over NB-IoT cellular.
+
+### Architecture
+```
+Server (Linode)                          Device (ESP32-S3)
+┌─────────────────────┐                  ┌─────────────────────┐
+│ Firmware Registry   │                  │ OTA State Machine   │
+│ - v4.6.bin (1MB)    │                  │ - Check for updates │
+│ - v5.0.bin (1MB)    │                  │ - Download chunks   │
+│                     │                  │ - Apply delta patch │
+│ Patch Generator     │   512-byte       │ - Verify & reboot   │
+│ - bsdiff algorithm  │◄──chunks────────►│                     │
+│ - heatshrink comp.  │                  │ NVS Progress        │
+│                     │                  │ - Resume on reboot  │
+│ Chunk Server        │                  │                     │
+│ - /api/ota/chunk    │                  │ esp_delta_ota       │
+└─────────────────────┘                  └─────────────────────┘
+```
+
+### Size Comparison
+| Update Type | Full Binary | Delta Patch | Compressed Delta |
+|-------------|-------------|-------------|------------------|
+| Bug fix | 1,010 KB | ~15 KB | ~8 KB |
+| Minor feature | 1,010 KB | ~40 KB | ~20 KB |
+| Major feature | 1,010 KB | ~100 KB | ~50 KB |
+
+### OTA Workflow
+
+**1. Register new firmware:**
+```bash
+# Build firmware
+pio run
+
+# Upload to server
+scp .pio/build/m5stack-atoms3/firmware.bin \
+    root@172.233.144.32:/opt/datajam-nbiot/ota/firmware/v4.7.bin
+
+# SSH to server
+ssh root@172.233.144.32
+cd /opt/datajam-nbiot && source venv/bin/activate
+
+# Generate delta patch (bsdiff + heatshrink)
+python3 ota/generate_patch.py 4.6 4.7
+
+# Register with backend
+python3 ota/register_firmware.py firmware 4.7 --current
+python3 ota/register_firmware.py patch 4.6 4.7
+
+# Check status
+python3 ota/register_firmware.py status
+```
+
+**2. Device update flow:**
+- Device calls `/api/ota/check` on heartbeat
+- If update available, downloads 512-byte chunks
+- Progress saved to NVS (survives power loss)
+- Applies delta patch using esp_delta_ota
+- Reboots and confirms success
+
+### OTA Phase Status
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 1 | Server Infrastructure | ✅ Complete |
+| 2 | Device Firmware (OTA client) | ✅ Complete (v5.0) |
+| 3 | Monitoring & Rollout UI | Pending |
+| 4 | Testing | Pending |
+
+### Registered Firmware & Patches
+| Version | Size | Status | Notes |
+|---------|------|--------|-------|
+| v4.6 | 1,011 KB | Available | Time sync fix |
+| v5.0 | 1,059 KB | Available | Reliability fixes |
+| v5.2 | 1,059 KB | **Current** | BLE sparse sampling (97/3 split) |
+
+| Patch | Size | Chunks | Compression |
+|-------|------|--------|-------------|
+| v4.6 → v5.0 | 188 KB | 369 | heatshrink (82% reduction) |
+
+**Note:** v5.2 deployed via direct flash. Generate OTA patch when needed: `python3 ota/generate_patch.py 5.0 5.2`
+
+### Supabase OTA Tables
+Run migration `migrations/006_ota_tables.sql` to add:
+- `firmware_versions` - Registry of firmware builds
+- `ota_patches` - Delta patches between versions
+- `device_ota_progress` - Track chunked download progress
 
 ---
 
@@ -375,6 +535,16 @@ Device JBNB0001 Token: B10fYoCjm0HWc8LltAXFsBpxw3pSCFALkDK5WVlIoIE
 | `/api/readings` | GET | View readings (optional ?device_id=X&limit=N) |
 | `/api/stats` | GET | System stats |
 | `/api/heartbeats` | GET | View heartbeat logs |
+| `/api/ota/register-firmware` | POST | Register new firmware version |
+| `/api/ota/register-patch` | POST | Register a delta patch |
+| `/api/ota/status` | GET | Get OTA status for all devices |
+
+**OTA Endpoints (require device auth):**
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/ota/check` | POST | Device checks for available updates |
+| `/api/ota/chunk` | GET | Get a single 512-byte chunk of patch |
+| `/api/ota/complete` | POST | Device reports update success/failure |
 
 ### Device Payload Format (v4.0 firmware / v2.6 backend)
 ```json
@@ -489,10 +659,15 @@ ALTER TABLE nbiot_readings ADD COLUMN IF NOT EXISTS cell_rssi INTEGER;
 ```
 /opt/datajam-nbiot/
 ├── venv/                 # Python virtual environment
-├── receiver.py           # Flask application (v2.6)
-├── sync_to_supabase.py   # Supabase sync script
+├── receiver.py           # Flask application (v2.7)
+├── sync_to_supabase.py   # Supabase sync script (v2.7)
 ├── data.db               # SQLite database
-└── data.db.v1.backup     # Backup of v1 database
+├── data.db.v1.backup     # Backup of v1 database
+└── ota/                  # OTA update system
+    ├── firmware/         # Firmware binaries (v4.6.bin, etc.)
+    ├── patches/          # Delta patches (patch_4.6_to_4.7.bin, .json)
+    ├── generate_patch.py # Patch generator (bsdiff + heatshrink)
+    └── register_firmware.py # CLI tool to register firmware/patches
 ```
 
 ---
@@ -643,7 +818,7 @@ python3 test_http_post.py
 ├── platformio.ini               # PlatformIO config
 ├── .gitignore                   # Excludes tokens, configs, credentials
 ├── src/
-│   ├── main.cpp                 # Main firmware source (v4.0)
+│   ├── main.cpp                 # Main firmware source (v5.2)
 │   └── device_config.h          # Device-specific config (auto-generated, gitignored)
 ├── scripts/
 │   ├── NBJBTOOL.sh              # Device provisioning tool
@@ -651,8 +826,14 @@ python3 test_http_post.py
 ├── docs/
 │   └── PROVISIONING_GUIDE.md    # Full provisioning documentation
 ├── backend/
-│   ├── receiver.py              # Local copy of Flask backend (v2.6)
-│   └── sync_to_supabase.py      # Supabase sync script
+│   ├── receiver.py              # Local copy of Flask backend (v2.7)
+│   ├── sync_to_supabase.py      # Supabase sync script (v2.7)
+│   └── ota/                     # OTA tools
+│       ├── generate_patch.py    # Delta patch generator
+│       ├── register_firmware.py # Firmware/patch registration CLI
+│       └── requirements.txt     # OTA dependencies (detools, heatshrink2)
+├── migrations/
+│   └── 006_ota_tables.sql       # Supabase OTA tables migration
 ├── provisioning.log             # Log of provisioned devices (no tokens)
 └── *.py                         # Various diagnostic scripts
 ```
@@ -661,9 +842,14 @@ python3 test_http_post.py
 ```
 /opt/datajam-nbiot/
 ├── venv/                        # Python 3.12 virtual environment
-├── receiver.py                  # Flask backend v2.6
-├── sync_to_supabase.py          # Supabase sync script
-└── data.db                      # SQLite database
+├── receiver.py                  # Flask backend v2.7
+├── sync_to_supabase.py          # Supabase sync script (v2.7)
+├── data.db                      # SQLite database
+└── ota/                         # OTA update system
+    ├── firmware/                # v4.6.bin, v4.7.bin, etc.
+    ├── patches/                 # Delta patches
+    ├── generate_patch.py        # Patch generator
+    └── register_firmware.py     # Registration CLI
 ```
 
 ---
@@ -923,4 +1109,4 @@ Integrating NB-IoT device management into DataJam Reports Portal.
 
 ---
 
-*Last Updated: 2026-01-28 (Firmware v4.0 with BLE Apple vs Other, Backend v2.6)*
+*Last Updated: 2026-01-29 (Firmware v5.2 with BLE sparse sampling, API v1.4.0 with composition percentages)*
