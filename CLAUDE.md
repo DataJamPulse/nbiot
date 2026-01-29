@@ -6,6 +6,8 @@ Building an NB-IoT version of the JamBox probe counter.
 
 **IMPORTANT FOR CLAUDE:** Never run `pio device monitor` or any serial monitor commands in chat sessions - they time out and crash. User will run serial monitor in a separate terminal. This device counts 802.11 probe requests (like existing JamBox units) but transmits data over cellular instead of WiFi.
 
+**CRITICAL - DO NOT TOUCH PRODUCTION:** Never access, modify, or deploy anything in the DataJam Pulse/Reports production folder (`/Users/jav/Desktop/DATAJAM/SynologyDrive/Development/Claude_Projects/Data_Jam_Pulse/datajamreports-production/`) unless the user EXPLICITLY asks. That is a live production site. The NB-IoT project is completely separate - work only within this project folder and the nbiot GitHub repo (github.com/DataJamPulse/nbiot).
+
 **Data Flow:** Device → NB-IoT (T-Mobile) → Hologram → Linode (processing) → Supabase (clean counts only) → DataJam Reports
 **Privacy-first architecture** - no PII leaves our infrastructure.
 
@@ -25,25 +27,25 @@ Use these agents for specific tasks:
 
 ## Current Status (2026-01-29)
 
-**STATUS: PRODUCTION READY** - v5.2 firmware with reliability fixes + optimized BLE sampling!
+**STATUS: PRODUCTION READY** - v5.4 firmware with remote device configuration!
 
 ### Active Devices
 | Device ID | Firmware | Location | Status |
 |-----------|----------|----------|--------|
-| JBNB0001 | **v5.2** | Dev Unit 1 | Online |
-| JBNB0002 | **v5.2** | Dev Unit 2 | Online |
+| JBNB0001 | **v5.4** | Dev Unit 1 | Online |
+| JBNB0002 | **v5.4** | Dev Unit 2 | Online |
 
 ### Isolated Test Environment Architecture
 ```
-JBNB Device (firmware v5.2)
+JBNB Device (firmware v5.4)
     ↓ HTTP over NB-IoT cellular (T-Mobile)
 Hologram
     ↓
-Linode (172.233.144.32:5000) ← Flask backend stores in SQLite
+Linode (172.233.144.32:5000) ← Flask backend v2.9 stores in SQLite
     ↓ sync_to_supabase.py (cron every 5 min)
 Supabase (NB-IoT project: xopbjawzrvsoeiapoawm)
     ↑
-Netlify Functions (nbiot.netlify.app/.netlify/functions/nbiot-api v1.4.0)
+Netlify Functions (nbiot.netlify.app/.netlify/functions/nbiot-api v1.6.0)
     ↑
 Dashboard (nbiot.netlify.app)
 ```
@@ -63,13 +65,14 @@ Shop owner view - simple language, no technical jargon:
 - "Where Are They?" - proximity breakdown (At Counter, In Store, Window Shopping, Walking Past)
 - "How Long Do They Stay?" - engagement (Quick Glance, Browsing, Shopping, Loyal Customer)
 
-**Page 2: Out of Home** (`fleet.html`)
+**Page 2: My Locations** (`locations.html`)
 Device management view:
 - Interactive map showing sensor locations
 - Fleet status (Online/Warning/Offline counts)
 - Sensor list with signal strength
-- Device detail modal with recent activity
+- Device detail modal with Activity + Settings tabs
 - **Device Health section** - firmware version, signal quality bars, status badges
+- **Remote Configuration** (v5.4) - adjust RSSI thresholds, dwell buckets, report intervals
 
 ### Remote Command System (v3.0)
 Devices receive commands via both heartbeat AND reading responses:
@@ -87,12 +90,35 @@ curl -X POST "..." -d '{"command":"geolocate"}'
 ```
 Commands work on every 5-minute reading as well as daily heartbeat (v3.0 fix).
 
-### Firmware Version: 5.2
-### Backend Version: 2.7
-### API Version: 1.4.0
+### Firmware Version: 5.4
+### Backend Version: 2.9
+### API Version: 1.6.0
+
+### Remote Device Configuration (v5.4)
+Administrators can remotely adjust device parameters from the Locations page UI:
+
+| Setting | Default | Range | Use Case |
+|---------|---------|-------|----------|
+| `report_interval_ms` | 300000 (5 min) | 1-60 min | Busy venue = 1min, quiet = 15min |
+| `rssi_immediate_threshold` | -50 dBm | -30 to -60 | Calibrate "At Counter" zone |
+| `rssi_near_threshold` | -65 dBm | -50 to -75 | Calibrate "In Store" zone |
+| `rssi_far_threshold` | -80 dBm | -65 to -90 | Calibrate "Window Shopping" zone |
+| `dwell_short_threshold` | 1 min | 1-5 | "Quick Glance" boundary |
+| `dwell_medium_threshold` | 5 min | 2-15 | "Browsing" boundary |
+| `dwell_long_threshold` | 10 min | 5-30 | "Shopping" boundary |
+
+**Flow:**
+1. Admin changes settings in Locations page Settings tab
+2. PUT to Netlify → Linode backend → SQLite `device_configs`
+3. Supabase sync copies config (every 5 min)
+4. Device heartbeat response includes `config_version`
+5. If server version > local, device fetches new config via GET /api/config/{device_id}
+6. Device applies new thresholds immediately (RAM-only for MVP)
+
+**Note:** Report interval changes require firmware reflash in v5.4 MVP. Future versions will support dynamic intervals via NVS persistence.
 
 ### Dwell Time Tracking (v3.0)
-Firmware tracks how long devices stay in range:
+Firmware tracks how long devices stay in range (thresholds now configurable via remote config):
 | Bucket | Duration | Shop Owner Term |
 |--------|----------|-----------------|
 | `dwell_0_1` | Under 1 min | "Quick Glance" |
@@ -146,7 +172,7 @@ ESP32 shares radio between WiFi and BLE, so firmware alternates:
 | `ble_other` | Other BLE devices (Android, wearables, IoT) |
 | `ble_rssi_avg` | Average BLE signal strength (dBm) |
 
-**API Calculated Fields (v1.4.0):**
+**API Calculated Fields (v1.5.0):**
 | Field | Description |
 |-------|-------------|
 | `ble_apple_pct` | Percentage of BLE devices that are Apple |
@@ -239,7 +265,7 @@ WiFi probe requests no longer used for OS detection (unreliable with randomized 
 | Hardware validation | ✓ Complete |
 | NB-IoT connectivity | ✓ T-Mobile Band 4 |
 | Linode server setup | ✓ Complete |
-| Flask backend v2.7 | ✓ Running with auth + geolocation + extended RSSI + heartbeat + device PIN + BLE + OTA |
+| Flask backend v2.8 | ✓ Running with auth + geolocation + extended RSSI + heartbeat + device PIN + BLE + OTA + idempotent inserts |
 | Device authentication | ✓ Token-based |
 | NB-IoT → Backend data flow | ✓ **VERIFIED** - JBNB0001 sending |
 | Probe capture firmware | ✓ **COMPLETE** - Privacy filter + WiFi probes |
@@ -267,8 +293,12 @@ NB-IoT has built-in network-layer encryption. TLS handshakes are unreliable over
 - [x] OTA server infrastructure - DONE (Phase 1 complete)
 - [x] OTA device firmware (Phase 2) - DONE (v5.0 has full OTA client)
 - [x] Firmware reliability fixes - DONE (v5.0 fixed arrays, no heap fragmentation)
+- [x] Accuracy & auditability (v5.3) - DONE (overflow tracking, age for cached, idempotent inserts)
+- [x] Remote device configuration (v5.4) - DONE (RSSI/dwell thresholds, Settings tab in UI)
+- [ ] Run Supabase migration `008_device_configs.sql` - NEW (device configs table)
 - [ ] OTA monitoring UI (Phase 3) - Fleet Command OTA status display
 - [ ] Run Supabase migration `006_ota_tables.sql`
+- [x] Run Supabase migration `007_data_quality.sql` - DONE (Data quality columns + unique index)
 - [ ] Persistent interval change (NVS storage) for set_interval command
 - [ ] Device history/events table for audit trail
 - [ ] Manual location entry when WiFi geolocation fails
@@ -338,6 +368,50 @@ Time sync fix for correct timestamps.
 - No critical section issues with dynamic allocation
 - Predictable memory usage regardless of traffic
 
+### Firmware v5.4 (2026-01-29)
+**Remote device configuration for distance zones and engagement buckets.**
+
+| Feature | Description |
+|---------|-------------|
+| **Configurable RSSI Thresholds** | `g_rssiImmediateThreshold`, `g_rssiNearThreshold`, `g_rssiFarThreshold` - adjustable via backend |
+| **Configurable Dwell Buckets** | `g_dwellShortThreshold`, `g_dwellMediumThreshold`, `g_dwellLongThreshold` - adjustable via backend |
+| **Config Version Tracking** | `g_configVersion` - device detects when server has newer config |
+| **Automatic Config Fetch** | `fetchAndApplyConfig()` - pulls config from `/api/config/{device_id}` when version changes |
+| **New Command** | `fetch_config` command to manually trigger config refresh |
+
+**Config Flow:**
+1. Heartbeat/reading response includes `config_version`
+2. If server version > local version, device schedules config fetch
+3. Device makes GET request to `/api/config/{DEVICE_ID}`
+4. Parses JSON response and updates threshold globals
+5. New thresholds applied immediately to RSSI categorization and dwell bucketing
+
+**Note:** Report interval is logged but not dynamically applied (requires NVS for persistence). Thresholds are RAM-only and reset to defaults on reboot until config is fetched again.
+
+### Firmware v5.3 (2026-01-28)
+**Accuracy & auditability improvements for production deployment.**
+
+| Feature | Description |
+|---------|-------------|
+| **Raised Caps** | MAX_UNIQUE_MACS 500→2000, MAX_DWELL_ENTRIES 200→1000 |
+| **Overflow Tracking** | `of` field reports uniques dropped when caps hit |
+| **Cache Age** | `age` field reports how old cached readings are (seconds) |
+| **Quality Fields** | `cd` (cache depth), `sf` (send failures) for auditability |
+| **Memory Impact** | +22KB RAM (still ~30% usage, safe for 24/7 operation) |
+
+**New Payload Fields (v5.3):**
+| Field | Type | Description |
+|-------|------|-------------|
+| `of` | uint16 | Overflow count (uniques dropped due to cap) |
+| `cd` | uint8 | Cache depth at time of send |
+| `sf` | uint8 | Consecutive send failures before this |
+| `age` | uint32 | Seconds old (0=live, >0=cached) |
+
+**Backend v2.8 Additions:**
+- `period_start_ts`: Server-calculated 5-minute bucket time
+- Idempotent inserts: Duplicate readings silently ignored
+- Cached readings land in correct historical buckets
+
 ### Firmware v5.2 (2026-01-29)
 **BLE sparse sampling for composition percentages.**
 
@@ -350,9 +424,92 @@ Time sync fix for correct timestamps.
 
 **Key Insight:** BLE is noisy (4,916 devices/day) but gives accurate manufacturer IDs. WiFi probes are sparse (343/day) but represent real foot traffic. Use BLE ratio to estimate device breakdown of WiFi counts.
 
-**API v1.4.0 calculates:**
+**API v1.5.0 calculates:**
 - `ble_apple_pct` / `ble_other_pct` from BLE sample
 - `estimated_apple` / `estimated_other` applied to WiFi unique counts
+
+### Data Quality Status (v1.5.0 UI)
+The dashboard displays a derived **Quality Status** badge for each reading:
+
+| Status | Condition | Meaning |
+|--------|-----------|---------|
+| **OK** | `of=0, cd=0, sf≤1` | Live data, no issues |
+| **CATCHING UP** | `cd>0` | Sending cached readings (was offline) |
+| **DEGRADED** | `of>0 OR sf>3` | Data loss (caps hit) or connectivity issues |
+
+Also displays badges:
+- **LIVE** / **CACHED** - Based on `age` field (0 = live, >0 = cached)
+- **OF: n** - Overflow count if >0
+- **RETRY: n** - Send failures if >0
+- **QUEUE: n** - Cache depth if >0
+
+### Heartbeat System
+Daily check-in for device health monitoring and time synchronization.
+
+**Frequency:**
+- Every **24 hours** (`HEARTBEAT_INTERVAL_MS` in device_config.h)
+- Also sent **on boot** after network connects
+
+**Endpoint:** `POST /api/heartbeat`
+
+**Payload (Device → Backend):**
+```json
+{
+  "d": "JBNB0002",
+  "v": "5.3",
+  "uptime": 86400,
+  "cell_rssi": -85
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `d` | Device ID |
+| `v` | Firmware version |
+| `uptime` | Seconds since boot |
+| `cell_rssi` | Cellular signal (dBm) |
+
+**Response (Backend → Device):**
+```json
+{
+  "status": "ok",
+  "server_time": "2026-01-29T10:00:00.123456+00:00",
+  "command": "send_now"
+}
+```
+
+**What happens on heartbeat:**
+1. **Time sync** - Device calculates boot timestamp from `server_time`
+2. **Command processing** - Executes any pending remote command
+3. **OTA rollback** - First successful heartbeat marks firmware as valid
+4. **OTA check scheduled** - Triggers daily update check
+
+**Available commands:** `send_now`, `reboot`, `geolocate`, `ota_check`
+
+---
+
+## Current Tests
+
+### Side-by-Side Device Comparison (2026-01-28)
+**Test Period:** 2026-01-28 8:50 PM PST → 2026-01-29 6:00 AM PST
+
+**Setup:** JBNB0001 and JBNB0002 placed ~2 inches apart, running identical v5.3 firmware.
+
+**Purpose:** Verify counting consistency between two devices in the same environment. Both should report similar numbers for:
+- Impressions (`i`)
+- Unique counts (`u`)
+- BLE composition (`ble_apple`, `ble_other`)
+- RSSI distribution
+- Dwell time buckets
+
+**Check data after 6 AM on 2026-01-29:**
+```bash
+# Compare readings between devices
+curl -H "Authorization: Bearer djnb-admin-2026-change-me" \
+  "http://172.233.144.32:5000/api/readings?limit=100" | jq '.readings | group_by(.device_id)'
+```
+
+**Expected:** Similar counts (within ~10% variance due to timing/sampling). Large discrepancies would indicate hardware or firmware issues.
 
 ---
 
@@ -430,13 +587,12 @@ python3 ota/register_firmware.py status
 |---------|------|--------|-------|
 | v4.6 | 1,011 KB | Available | Time sync fix |
 | v5.0 | 1,059 KB | Available | Reliability fixes |
-| v5.2 | 1,059 KB | **Current** | BLE sparse sampling (97/3 split) |
+| v5.3 | 1,059 KB | **Current** | Accuracy & auditability |
 
 | Patch | Size | Chunks | Compression |
 |-------|------|--------|-------------|
 | v4.6 → v5.0 | 188 KB | 369 | heatshrink (82% reduction) |
-
-**Note:** v5.2 deployed via direct flash. Generate OTA patch when needed: `python3 ota/generate_patch.py 5.0 5.2`
+| v5.0 → v5.3 | 136 KB | 267 | heatshrink (87% reduction) |
 
 ### Supabase OTA Tables
 Run migration `migrations/006_ota_tables.sql` to add:
@@ -546,11 +702,11 @@ Device JBNB0001 Token: B10fYoCjm0HWc8LltAXFsBpxw3pSCFALkDK5WVlIoIE
 | `/api/ota/chunk` | GET | Get a single 512-byte chunk of patch |
 | `/api/ota/complete` | POST | Device reports update success/failure |
 
-### Device Payload Format (v4.0 firmware / v2.6 backend)
+### Device Payload Format (v5.3 firmware / v2.8 backend)
 ```json
 {
   "d": "JBNB0001",
-  "t": "2026-01-25T12:15:00Z",
+  "t": "2026-01-28T12:15:00Z",
   "i": 450,
   "u": 120,
   "probe_rssi_avg": -62,
@@ -569,7 +725,11 @@ Device JBNB0001 Token: B10fYoCjm0HWc8LltAXFsBpxw3pSCFALkDK5WVlIoIE
   "ble_u": 85,
   "ble_apple": 156,
   "ble_other": 44,
-  "ble_rssi_avg": -68
+  "ble_rssi_avg": -68,
+  "of": 0,
+  "cd": 0,
+  "sf": 0,
+  "age": 0
 }
 ```
 
@@ -596,7 +756,15 @@ Device JBNB0001 Token: B10fYoCjm0HWc8LltAXFsBpxw3pSCFALkDK5WVlIoIE
 | `ble_other` | Other BLE devices (Android, wearables, IoT) |
 | `ble_rssi_avg` | Average BLE signal strength (dBm) |
 
-**Note:** `ble_android` field exists in backend for backwards compatibility but v4.0 firmware sends 0.
+**Quality/Auditability Fields (v5.3+):**
+| Field | Description |
+|-------|-------------|
+| `of` | Overflow count - uniques dropped due to cap being hit |
+| `cd` | Cache depth - number of readings in device cache when sent |
+| `sf` | Send failures - consecutive failures before this send succeeded |
+| `age` | Age in seconds - 0 for live readings, >0 for cached readings |
+
+**Note:** `ble_android` field exists in backend for backwards compatibility but firmware sends 0.
 
 **Privacy Note:** Only randomized MACs are counted for both WiFi and BLE. Static addresses are filtered at the device level.
 
@@ -659,8 +827,8 @@ ALTER TABLE nbiot_readings ADD COLUMN IF NOT EXISTS cell_rssi INTEGER;
 ```
 /opt/datajam-nbiot/
 ├── venv/                 # Python virtual environment
-├── receiver.py           # Flask application (v2.7)
-├── sync_to_supabase.py   # Supabase sync script (v2.7)
+├── receiver.py           # Flask application (v2.8)
+├── sync_to_supabase.py   # Supabase sync script (v2.8)
 ├── data.db               # SQLite database
 ├── data.db.v1.backup     # Backup of v1 database
 └── ota/                  # OTA update system
@@ -818,7 +986,7 @@ python3 test_http_post.py
 ├── platformio.ini               # PlatformIO config
 ├── .gitignore                   # Excludes tokens, configs, credentials
 ├── src/
-│   ├── main.cpp                 # Main firmware source (v5.2)
+│   ├── main.cpp                 # Main firmware source (v5.3)
 │   └── device_config.h          # Device-specific config (auto-generated, gitignored)
 ├── scripts/
 │   ├── NBJBTOOL.sh              # Device provisioning tool
@@ -826,8 +994,8 @@ python3 test_http_post.py
 ├── docs/
 │   └── PROVISIONING_GUIDE.md    # Full provisioning documentation
 ├── backend/
-│   ├── receiver.py              # Local copy of Flask backend (v2.7)
-│   ├── sync_to_supabase.py      # Supabase sync script (v2.7)
+│   ├── receiver.py              # Local copy of Flask backend (v2.8)
+│   ├── sync_to_supabase.py      # Supabase sync script (v2.8)
 │   └── ota/                     # OTA tools
 │       ├── generate_patch.py    # Delta patch generator
 │       ├── register_firmware.py # Firmware/patch registration CLI
@@ -842,8 +1010,8 @@ python3 test_http_post.py
 ```
 /opt/datajam-nbiot/
 ├── venv/                        # Python 3.12 virtual environment
-├── receiver.py                  # Flask backend v2.7
-├── sync_to_supabase.py          # Supabase sync script (v2.7)
+├── receiver.py                  # Flask backend v2.8
+├── sync_to_supabase.py          # Supabase sync script (v2.8)
 ├── data.db                      # SQLite database
 └── ota/                         # OTA update system
     ├── firmware/                # v4.6.bin, v4.7.bin, etc.
@@ -1109,4 +1277,4 @@ Integrating NB-IoT device management into DataJam Reports Portal.
 
 ---
 
-*Last Updated: 2026-01-29 (Firmware v5.2 with BLE sparse sampling, API v1.4.0 with composition percentages)*
+*Last Updated: 2026-01-29 (Firmware v5.4, Backend v2.9, API v1.6.0 with remote device configuration)*

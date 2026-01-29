@@ -1,6 +1,8 @@
 /**
- * NB-IoT Device Management API v1.4.0
+ * NB-IoT Device Management API v1.6.0
  * Standalone admin portal for NB-IoT JamBox fleet management.
+ * v1.6.0: Added remote device configuration (RSSI/dwell thresholds, report intervals).
+ * v1.5.0: Added data quality/auditability fields (overflow, cache_depth, send_failures, age).
  * v1.4.0: Added BLE-based device composition percentages (Apple vs Other).
  * v1.3.0: Added remote command support (send_now, reboot, geolocate).
  * v1.2.0: Added BLE device counting fields for accurate OS detection.
@@ -8,6 +10,8 @@
  * Endpoints:
  * - GET  /nbiot-api/devices         List all devices
  * - GET  /nbiot-api/device/:id      Get single device + readings
+ * - GET  /nbiot-api/device/:id/config  Get device configuration
+ * - PUT  /nbiot-api/device/:id/config  Update device configuration
  * - GET  /nbiot-api/readings        Get readings (query: device_id, limit, days)
  * - GET  /nbiot-api/stats           Fleet statistics with Apple/Android breakdown
  * - GET  /nbiot-api/hourly          Hourly aggregated data (query: device_id, days)
@@ -291,11 +295,11 @@ exports.handler = async (event) => {
       const devices = await supabaseQuery('GET', 'nbiot_devices?order=device_id');
       const formatted = (devices || []).map(formatDevice);
 
-      // Get today's readings with all metrics including dwell time, RSSI zones, and BLE
+      // Get today's readings with all metrics including dwell time, RSSI zones, BLE, and data quality
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const todayStats = await supabaseQuery('GET',
-        `nbiot_readings?timestamp=gte.${today.toISOString()}&select=impressions,unique_count,apple_count,android_count,signal_dbm,dwell_0_1,dwell_1_5,dwell_5_10,dwell_10plus,rssi_immediate,rssi_near,rssi_far,rssi_remote,ble_impressions,ble_unique,ble_apple,ble_android,ble_other`
+        `nbiot_readings?timestamp=gte.${today.toISOString()}&select=impressions,unique_count,apple_count,android_count,signal_dbm,dwell_0_1,dwell_1_5,dwell_5_10,dwell_10plus,rssi_immediate,rssi_near,rssi_far,rssi_remote,ble_impressions,ble_unique,ble_apple,ble_android,ble_other,period_start_ts,overflow_count,cache_depth,send_failures,age_seconds`
       );
 
       const totalImpressions = (todayStats || []).reduce((sum, r) => sum + (r.impressions || 0), 0);
@@ -324,6 +328,13 @@ exports.handler = async (event) => {
       const bleApple = (todayStats || []).reduce((sum, r) => sum + (r.ble_apple || 0), 0);
       const bleAndroid = (todayStats || []).reduce((sum, r) => sum + (r.ble_android || 0), 0);
       const bleOther = (todayStats || []).reduce((sum, r) => sum + (r.ble_other || 0), 0);
+
+      // Data quality aggregates (v1.5.0)
+      const totalOverflow = (todayStats || []).reduce((sum, r) => sum + (r.overflow_count || 0), 0);
+      const readingsWithOverflow = (todayStats || []).filter(r => (r.overflow_count || 0) > 0).length;
+      const maxCacheDepth = Math.max(0, ...(todayStats || []).map(r => r.cache_depth || 0));
+      const cachedReadings = (todayStats || []).filter(r => (r.age_seconds || 0) > 0).length;
+      const totalSendFailures = (todayStats || []).reduce((sum, r) => sum + (r.send_failures || 0), 0);
 
       // Calculate device composition percentages from BLE sample
       // BLE gives us accurate OS detection via manufacturer IDs
@@ -377,7 +388,15 @@ exports.handler = async (event) => {
             ble_other_pct: bleOtherPct,
             // Estimated breakdown applied to WiFi counts
             estimated_apple: estimatedApple,
-            estimated_other: estimatedOther
+            estimated_other: estimatedOther,
+            // Data quality metrics (v1.5.0)
+            data_quality: {
+              total_overflow: totalOverflow,
+              readings_with_overflow: readingsWithOverflow,
+              max_cache_depth: maxCacheDepth,
+              cached_readings: cachedReadings,
+              total_send_failures: totalSendFailures
+            }
           },
           devices: formatted.map(d => ({
             device_id: d.device_id,
@@ -532,6 +551,126 @@ exports.handler = async (event) => {
     }
 
     // =====================
+    // GET /device/:id/config - Get device configuration
+    // =====================
+    if (method === 'GET' && segments[0] === 'device' && segments[1] && segments[2] === 'config') {
+      const deviceId = segments[1].toUpperCase();
+
+      // Try to get from Supabase first
+      const configs = await supabaseQuery('GET', `nbiot_device_configs?device_id=eq.${deviceId}`);
+
+      if (configs && configs.length > 0) {
+        const config = configs[0];
+        return {
+          statusCode: 200,
+          headers,
+          body: JSON.stringify({
+            device_id: deviceId,
+            config_version: config.config_version || 1,
+            report_interval_ms: config.report_interval_ms || 300000,
+            rssi_immediate_threshold: config.rssi_immediate_threshold || -50,
+            rssi_near_threshold: config.rssi_near_threshold || -65,
+            rssi_far_threshold: config.rssi_far_threshold || -80,
+            dwell_short_threshold: config.dwell_short_threshold || 1,
+            dwell_medium_threshold: config.dwell_medium_threshold || 5,
+            dwell_long_threshold: config.dwell_long_threshold || 10,
+            updated_at: config.updated_at
+          })
+        };
+      }
+
+      // Return defaults if no config found
+      return {
+        statusCode: 200,
+        headers,
+        body: JSON.stringify({
+          device_id: deviceId,
+          config_version: 1,
+          report_interval_ms: 300000,
+          rssi_immediate_threshold: -50,
+          rssi_near_threshold: -65,
+          rssi_far_threshold: -80,
+          dwell_short_threshold: 1,
+          dwell_medium_threshold: 5,
+          dwell_long_threshold: 10,
+          updated_at: null
+        })
+      };
+    }
+
+    // =====================
+    // PUT /device/:id/config - Update device configuration
+    // =====================
+    if (method === 'PUT' && segments[0] === 'device' && segments[1] && segments[2] === 'config') {
+      if (!NBIOT_ADMIN_KEY) {
+        return { statusCode: 500, headers, body: JSON.stringify({ error: 'Linode admin key not configured' }) };
+      }
+
+      const deviceId = segments[1].toUpperCase();
+      const body = JSON.parse(event.body || '{}');
+
+      // Client-side validation
+      const errors = [];
+
+      // Validate report interval (1-60 minutes)
+      if (body.report_interval_ms !== undefined) {
+        if (body.report_interval_ms < 60000 || body.report_interval_ms > 3600000) {
+          errors.push('report_interval_ms must be between 60000 (1 min) and 3600000 (60 min)');
+        }
+      }
+
+      // Validate RSSI thresholds
+      const rssiImm = body.rssi_immediate_threshold ?? -50;
+      const rssiNear = body.rssi_near_threshold ?? -65;
+      const rssiFar = body.rssi_far_threshold ?? -80;
+
+      if (rssiImm < -60 || rssiImm > -30) errors.push('rssi_immediate_threshold must be between -30 and -60');
+      if (rssiNear < -75 || rssiNear > -50) errors.push('rssi_near_threshold must be between -50 and -75');
+      if (rssiFar < -90 || rssiFar > -65) errors.push('rssi_far_threshold must be between -65 and -90');
+      if (rssiImm <= rssiNear || rssiNear <= rssiFar) {
+        errors.push('RSSI thresholds must be in order: immediate > near > far');
+      }
+
+      // Validate dwell thresholds
+      const dwellShort = body.dwell_short_threshold ?? 1;
+      const dwellMedium = body.dwell_medium_threshold ?? 5;
+      const dwellLong = body.dwell_long_threshold ?? 10;
+
+      if (dwellShort < 1 || dwellShort > 5) errors.push('dwell_short_threshold must be between 1 and 5');
+      if (dwellMedium < 2 || dwellMedium > 15) errors.push('dwell_medium_threshold must be between 2 and 15');
+      if (dwellLong < 5 || dwellLong > 30) errors.push('dwell_long_threshold must be between 5 and 30');
+      if (dwellShort >= dwellMedium || dwellMedium >= dwellLong) {
+        errors.push('Dwell thresholds must be in order: short < medium < long');
+      }
+
+      if (errors.length > 0) {
+        return { statusCode: 400, headers, body: JSON.stringify({ error: errors.join('; ') }) };
+      }
+
+      // Proxy to Linode backend
+      const response = await linodeRequest('PUT', `/api/config/${deviceId}`, body);
+
+      if (response.statusCode === 200) {
+        return {
+          statusCode: 200,
+          headers,
+          body: JSON.stringify({
+            success: true,
+            device_id: deviceId,
+            config_version: response.data?.config_version,
+            message: 'Configuration updated. Device will apply on next heartbeat.'
+          })
+        };
+      } else {
+        return {
+          statusCode: response.statusCode,
+          headers,
+          body: JSON.stringify({ error: response.data?.error || 'Configuration update failed' })
+        };
+      }
+    }
+
+    // =====================
     // POST /device/:id/command - Send command to device
     // Commands: send_now, reboot, geolocate
     // =====================
@@ -584,7 +723,7 @@ exports.handler = async (event) => {
       headers,
       body: JSON.stringify({
         error: 'Not found',
-        available: ['GET /devices', 'GET /device/:id', 'GET /readings', 'GET /stats', 'GET /hourly', 'POST /device/register', 'POST /device/:id/regenerate', 'POST /device/:id/command']
+        available: ['GET /devices', 'GET /device/:id', 'GET /device/:id/config', 'PUT /device/:id/config', 'GET /readings', 'GET /stats', 'GET /hourly', 'POST /device/register', 'POST /device/:id/regenerate', 'POST /device/:id/command']
       })
     };
 

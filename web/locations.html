@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Out of Home | DataJam</title>
+    <title>My Locations | DataJam</title>
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -664,6 +664,199 @@
         .cmd-btn:hover.reboot svg { stroke: var(--chart-yellow); }
         .cmd-btn:hover.locate svg { stroke: var(--chart-purple); }
 
+        /* Modal Tabs */
+        .modal-tabs {
+            display: flex;
+            gap: 4px;
+            padding: 0 24px;
+            background: var(--bg-deep);
+            border-bottom: 1px solid rgba(255,255,255,0.04);
+        }
+
+        .modal-tab {
+            padding: 12px 20px;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-muted);
+            background: transparent;
+            border: none;
+            border-bottom: 2px solid transparent;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .modal-tab:hover {
+            color: var(--text-secondary);
+        }
+
+        .modal-tab.active {
+            color: var(--text-white);
+            border-bottom-color: var(--dj-pink);
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* Settings Panel */
+        .settings-section {
+            margin-bottom: 24px;
+        }
+
+        .settings-section-title {
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-white);
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .settings-section-title svg {
+            width: 16px;
+            height: 16px;
+            opacity: 0.6;
+        }
+
+        .setting-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.04);
+        }
+
+        .setting-row:last-child {
+            border-bottom: none;
+        }
+
+        .setting-label {
+            font-size: 13px;
+            color: var(--text-primary);
+        }
+
+        .setting-sublabel {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+
+        .setting-value {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .setting-value-display {
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-white);
+            min-width: 60px;
+            text-align: right;
+        }
+
+        /* Range Slider */
+        .range-slider {
+            -webkit-appearance: none;
+            width: 120px;
+            height: 4px;
+            background: var(--bg-elevated);
+            border-radius: 2px;
+            outline: none;
+        }
+
+        .range-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 16px;
+            height: 16px;
+            background: var(--dj-pink);
+            border-radius: 50%;
+            cursor: pointer;
+            transition: transform 0.2s ease;
+        }
+
+        .range-slider::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+        }
+
+        .range-slider::-moz-range-thumb {
+            width: 16px;
+            height: 16px;
+            background: var(--dj-pink);
+            border: none;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+
+        /* Select Dropdown */
+        .settings-select {
+            background: var(--bg-elevated);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: var(--radius-sm);
+            padding: 8px 12px;
+            font-family: inherit;
+            font-size: 13px;
+            color: var(--text-white);
+            cursor: pointer;
+            outline: none;
+        }
+
+        .settings-select:hover {
+            border-color: rgba(255,255,255,0.15);
+        }
+
+        .settings-select:focus {
+            border-color: var(--dj-pink);
+        }
+
+        /* Save Button */
+        .save-btn {
+            width: 100%;
+            padding: 14px;
+            margin-top: 24px;
+            font-family: inherit;
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--text-white);
+            background: linear-gradient(135deg, var(--dj-pink), var(--dj-orange));
+            border: none;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .save-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(230, 47, 110, 0.3);
+        }
+
+        .save-btn:active {
+            transform: translateY(0);
+        }
+
+        .save-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .save-btn.success {
+            background: var(--chart-teal);
+        }
+
+        .config-version {
+            font-size: 11px;
+            color: var(--text-muted);
+            text-align: center;
+            margin-top: 8px;
+        }
+
         /* Footer */
         .footer {
             text-align: center;
@@ -725,8 +918,8 @@
         </nav>
 
         <div class="page-header">
-            <h1 class="page-title">Out of Home</h1>
-            <p class="page-subtitle">Your sensor network across all locations</p>
+            <h1 class="page-title">My Locations</h1>
+            <p class="page-subtitle">Manage your sensor network across all locations</p>
         </div>
 
         <div class="grid-layout">
@@ -776,7 +969,7 @@
         </div>
 
         <footer class="footer">
-            Powered by DataJam • API v1.5.0 • Updates every 2 minutes
+            Powered by DataJam • API v1.6.0 • Updates every 2 minutes
         </footer>
     </div>
 
@@ -970,6 +1163,9 @@
             `).join('');
         }
 
+        // Current device config cache
+        let currentDeviceConfig = null;
+
         async function showDeviceDetail(deviceId) {
             const modal = document.getElementById('modal');
             modal.innerHTML = `
@@ -987,8 +1183,15 @@
             `;
 
             try {
-                const res = await fetch(`${API_BASE}/device/${deviceId}`);
-                const data = await res.json();
+                // Fetch device data and config in parallel
+                const [deviceRes, configRes] = await Promise.all([
+                    fetch(`${API_BASE}/device/${deviceId}`),
+                    fetch(`${API_BASE}/device/${deviceId}/config`)
+                ]);
+                const data = await deviceRes.json();
+                const config = await configRes.json();
+                currentDeviceConfig = config;
+
                 const { device, recent_readings } = data;
 
                 const todayReadings = recent_readings.filter(r =>
@@ -1000,7 +1203,6 @@
                 const todayBleUnique = todayReadings.reduce((sum, r) => sum + (r.ble_unique || 0), 0);
                 const todayBleApple = todayReadings.reduce((sum, r) => sum + (r.ble_apple || 0), 0);
                 const todayOverflow = todayReadings.reduce((sum, r) => sum + (r.overflow_count || 0), 0);
-                const cachedCount = todayReadings.filter(r => (r.age_seconds || 0) > 0).length;
 
                 modal.innerHTML = `
                     <div class="modal-overlay" onclick="if(event.target===this)closeModal()">
@@ -1009,93 +1211,212 @@
                                 <div class="modal-title">${device.location_name || device.device_id}</div>
                                 <button class="modal-close" onclick="closeModal()">×</button>
                             </div>
+                            <div class="modal-tabs">
+                                <button class="modal-tab active" onclick="switchTab('activity', this)">Activity</button>
+                                <button class="modal-tab" onclick="switchTab('settings', this)">Settings</button>
+                            </div>
                             <div class="modal-body">
-                                <div class="modal-stats">
-                                    <div class="modal-stat">
-                                        <div class="modal-stat-value">${todayImpressions.toLocaleString()}</div>
-                                        <div class="modal-stat-label">Impressions</div>
+                                <!-- Activity Tab -->
+                                <div id="tab-activity" class="tab-content active">
+                                    <div class="modal-stats">
+                                        <div class="modal-stat">
+                                            <div class="modal-stat-value">${todayImpressions.toLocaleString()}</div>
+                                            <div class="modal-stat-label">Impressions</div>
+                                        </div>
+                                        <div class="modal-stat">
+                                            <div class="modal-stat-value">${todayUnique.toLocaleString()}</div>
+                                            <div class="modal-stat-label">Unique</div>
+                                        </div>
+                                        <div class="modal-stat">
+                                            <div class="modal-stat-value">${device.last_signal_dbm || '—'}</div>
+                                            <div class="modal-stat-label">Signal</div>
+                                        </div>
                                     </div>
-                                    <div class="modal-stat">
-                                        <div class="modal-stat-value">${todayUnique.toLocaleString()}</div>
-                                        <div class="modal-stat-label">Unique</div>
+                                    <div class="modal-stats" style="margin-top: 8px;">
+                                        <div class="modal-stat">
+                                            <div class="modal-stat-value">${todayBleUnique > 0 ? Math.round((todayBleApple / todayBleUnique) * 100) : 0}%</div>
+                                            <div class="modal-stat-label">Apple</div>
+                                        </div>
+                                        <div class="modal-stat">
+                                            <div class="modal-stat-value">${todayBleUnique > 0 ? Math.round(((todayBleUnique - todayBleApple) / todayBleUnique) * 100) : 0}%</div>
+                                            <div class="modal-stat-label">Other</div>
+                                        </div>
+                                        <div class="modal-stat">
+                                            <div class="modal-stat-value" style="color: ${todayOverflow > 0 ? 'var(--dj-orange)' : 'var(--chart-teal)'}">${todayOverflow}</div>
+                                            <div class="modal-stat-label">Overflow</div>
+                                        </div>
                                     </div>
-                                    <div class="modal-stat">
-                                        <div class="modal-stat-value">${device.last_signal_dbm || '—'}</div>
-                                        <div class="modal-stat-label">Signal</div>
-                                    </div>
-                                </div>
-                                <div class="modal-stats" style="margin-top: 8px;">
-                                    <div class="modal-stat">
-                                        <div class="modal-stat-value">${todayBleUnique > 0 ? Math.round((todayBleApple / todayBleUnique) * 100) : 0}%</div>
-                                        <div class="modal-stat-label">Apple</div>
-                                    </div>
-                                    <div class="modal-stat">
-                                        <div class="modal-stat-value">${todayBleUnique > 0 ? Math.round(((todayBleUnique - todayBleApple) / todayBleUnique) * 100) : 0}%</div>
-                                        <div class="modal-stat-label">Other</div>
-                                    </div>
-                                    <div class="modal-stat">
-                                        <div class="modal-stat-value" style="color: ${todayOverflow > 0 ? 'var(--dj-orange)' : 'var(--chart-teal)'}">${todayOverflow}</div>
-                                        <div class="modal-stat-label">Overflow</div>
-                                    </div>
-                                </div>
 
-                                <div style="margin-bottom: 16px;">
-                                    <div style="font-size: 12px; font-weight: 500; color: var(--text-muted); margin-bottom: 8px;">Recent Activity</div>
-                                    <div class="readings-list">
-                                        ${recent_readings.length === 0
-                                            ? '<div style="padding: 16px; text-align: center; color: var(--text-muted);">No data yet</div>'
-                                            : recent_readings.slice(0, 15).map(r => {
-                                                const bleU = r.ble_unique || 0;
-                                                const bleA = r.ble_apple || 0;
-                                                const applePct = bleU > 0 ? Math.round((bleA / bleU) * 100) : 0;
-                                                const otherPct = bleU > 0 ? 100 - applePct : 0;
-                                                const qs = getQualityStatus(r.overflow_count, r.cache_depth, r.send_failures);
-                                                return `
-                                                <div class="reading-row" style="flex-direction: column; align-items: flex-start; gap: 6px;">
-                                                    <div style="display: flex; justify-content: space-between; width: 100%; align-items: center;">
-                                                        <div style="display: flex; align-items: center; gap: 8px;">
-                                                            <span class="reading-time">${new Date(r.timestamp).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}</span>
-                                                            <span class="quality-status ${qs.class}">${qs.status}</span>
+                                    <div style="margin: 16px 0;">
+                                        <div style="font-size: 12px; font-weight: 500; color: var(--text-muted); margin-bottom: 8px;">Recent Activity</div>
+                                        <div class="readings-list">
+                                            ${recent_readings.length === 0
+                                                ? '<div style="padding: 16px; text-align: center; color: var(--text-muted);">No data yet</div>'
+                                                : recent_readings.slice(0, 10).map(r => {
+                                                    const bleU = r.ble_unique || 0;
+                                                    const bleA = r.ble_apple || 0;
+                                                    const applePct = bleU > 0 ? Math.round((bleA / bleU) * 100) : 0;
+                                                    const otherPct = bleU > 0 ? 100 - applePct : 0;
+                                                    const qs = getQualityStatus(r.overflow_count, r.cache_depth, r.send_failures);
+                                                    return `
+                                                    <div class="reading-row" style="flex-direction: column; align-items: flex-start; gap: 6px;">
+                                                        <div style="display: flex; justify-content: space-between; width: 100%; align-items: center;">
+                                                            <div style="display: flex; align-items: center; gap: 8px;">
+                                                                <span class="reading-time">${new Date(r.timestamp).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}</span>
+                                                                <span class="quality-status ${qs.class}">${qs.status}</span>
+                                                            </div>
+                                                            <span class="reading-value">${r.impressions} / ${r.unique_count || 0}</span>
                                                         </div>
-                                                        <span class="reading-value">${r.impressions} / ${r.unique_count || 0}</span>
+                                                        <div style="display: flex; justify-content: space-between; width: 100%; font-size: 11px; color: var(--text-secondary);">
+                                                            <span>Apple ${applePct}% / Other ${otherPct}%</span>
+                                                            <span>${r.signal_dbm || '—'}dBm</span>
+                                                        </div>
                                                     </div>
-                                                    <div style="display: flex; justify-content: space-between; width: 100%; font-size: 11px; color: var(--text-secondary);">
-                                                        <span>Apple ${applePct}% / Other ${otherPct}%</span>
-                                                        <span>${r.signal_dbm || '—'}dBm${(r.age_seconds || 0) > 0 ? ' · ' + r.age_seconds + 's old' : ''}</span>
-                                                    </div>
-                                                </div>
-                                            `}).join('')
-                                        }
+                                                `}).join('')
+                                            }
+                                        </div>
+                                    </div>
+
+                                    <div class="command-buttons">
+                                        <button class="cmd-btn send" onclick="sendCommand('${device.device_id}', 'send_now', this)">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
+                                            </svg>
+                                            Send Now
+                                        </button>
+                                        <button class="cmd-btn locate" onclick="sendCommand('${device.device_id}', 'geolocate', this)">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                <circle cx="12" cy="12" r="10"/>
+                                                <path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>
+                                            </svg>
+                                            Geolocate
+                                        </button>
+                                        <button class="cmd-btn reboot" onclick="sendCommand('${device.device_id}', 'reboot', this)">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                <path d="M1 4v6h6M23 20v-6h-6"/>
+                                                <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
+                                            </svg>
+                                            Reboot
+                                        </button>
+                                    </div>
+
+                                    <div style="padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.06); font-size: 12px; color: var(--text-muted);">
+                                        <div>Device ID: ${device.device_id}</div>
+                                        <div>Firmware: v${device.firmware_version || '—'}</div>
+                                        ${device.latitude ? `<div>Location: ${device.latitude.toFixed(4)}, ${device.longitude.toFixed(4)}</div>` : ''}
                                     </div>
                                 </div>
 
-                                <div class="command-buttons">
-                                    <button class="cmd-btn send" onclick="sendCommand('${device.device_id}', 'send_now', this)">
-                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                            <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
-                                        </svg>
-                                        Send Now
-                                    </button>
-                                    <button class="cmd-btn locate" onclick="sendCommand('${device.device_id}', 'geolocate', this)">
-                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                            <circle cx="12" cy="12" r="10"/>
-                                            <path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>
-                                        </svg>
-                                        Geolocate
-                                    </button>
-                                    <button class="cmd-btn reboot" onclick="sendCommand('${device.device_id}', 'reboot', this)">
-                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                            <path d="M1 4v6h6M23 20v-6h-6"/>
-                                            <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
-                                        </svg>
-                                        Reboot
-                                    </button>
-                                </div>
+                                <!-- Settings Tab -->
+                                <div id="tab-settings" class="tab-content">
+                                    <div class="settings-section">
+                                        <div class="settings-section-title">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                <circle cx="12" cy="12" r="3"/>
+                                                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                                            </svg>
+                                            Report Interval
+                                        </div>
+                                        <div class="setting-row">
+                                            <div>
+                                                <div class="setting-label">Data Reporting Frequency</div>
+                                                <div class="setting-sublabel">How often the device sends data</div>
+                                            </div>
+                                            <select id="cfg-interval" class="settings-select" onchange="updateIntervalDisplay()">
+                                                <option value="60000" ${config.report_interval_ms === 60000 ? 'selected' : ''}>1 minute</option>
+                                                <option value="300000" ${config.report_interval_ms === 300000 ? 'selected' : ''}>5 minutes</option>
+                                                <option value="600000" ${config.report_interval_ms === 600000 ? 'selected' : ''}>10 minutes</option>
+                                                <option value="900000" ${config.report_interval_ms === 900000 ? 'selected' : ''}>15 minutes</option>
+                                                <option value="1800000" ${config.report_interval_ms === 1800000 ? 'selected' : ''}>30 minutes</option>
+                                                <option value="3600000" ${config.report_interval_ms === 3600000 ? 'selected' : ''}>60 minutes</option>
+                                            </select>
+                                        </div>
+                                    </div>
 
-                                <div style="padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.06); font-size: 12px; color: var(--text-muted);">
-                                    <div>Device ID: ${device.device_id}</div>
-                                    <div>Firmware: v${device.firmware_version || '—'}</div>
-                                    ${device.latitude ? `<div>Location: ${device.latitude.toFixed(4)}, ${device.longitude.toFixed(4)}</div>` : ''}
+                                    <div class="settings-section">
+                                        <div class="settings-section-title">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
+                                                <circle cx="12" cy="10" r="3"/>
+                                            </svg>
+                                            Distance Zones (RSSI Thresholds)
+                                        </div>
+                                        <div class="setting-row">
+                                            <div>
+                                                <div class="setting-label">At Counter</div>
+                                                <div class="setting-sublabel">Very close range (0-2m)</div>
+                                            </div>
+                                            <div class="setting-value">
+                                                <input type="range" class="range-slider" id="cfg-rssi-imm" min="-60" max="-30" value="${config.rssi_immediate_threshold || -50}" oninput="updateSliderDisplay(this, 'rssi-imm-val', 'dBm')">
+                                                <span class="setting-value-display" id="rssi-imm-val">${config.rssi_immediate_threshold || -50} dBm</span>
+                                            </div>
+                                        </div>
+                                        <div class="setting-row">
+                                            <div>
+                                                <div class="setting-label">In Store</div>
+                                                <div class="setting-sublabel">Near range (2-5m)</div>
+                                            </div>
+                                            <div class="setting-value">
+                                                <input type="range" class="range-slider" id="cfg-rssi-near" min="-75" max="-50" value="${config.rssi_near_threshold || -65}" oninput="updateSliderDisplay(this, 'rssi-near-val', 'dBm')">
+                                                <span class="setting-value-display" id="rssi-near-val">${config.rssi_near_threshold || -65} dBm</span>
+                                            </div>
+                                        </div>
+                                        <div class="setting-row">
+                                            <div>
+                                                <div class="setting-label">Window Shopping</div>
+                                                <div class="setting-sublabel">Far range (5-15m)</div>
+                                            </div>
+                                            <div class="setting-value">
+                                                <input type="range" class="range-slider" id="cfg-rssi-far" min="-90" max="-65" value="${config.rssi_far_threshold || -80}" oninput="updateSliderDisplay(this, 'rssi-far-val', 'dBm')">
+                                                <span class="setting-value-display" id="rssi-far-val">${config.rssi_far_threshold || -80} dBm</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="settings-section">
+                                        <div class="settings-section-title">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                <circle cx="12" cy="12" r="10"/>
+                                                <polyline points="12 6 12 12 16 14"/>
+                                            </svg>
+                                            Engagement Buckets (Dwell Time)
+                                        </div>
+                                        <div class="setting-row">
+                                            <div>
+                                                <div class="setting-label">Quick Glance</div>
+                                                <div class="setting-sublabel">0 to X minutes</div>
+                                            </div>
+                                            <div class="setting-value">
+                                                <input type="range" class="range-slider" id="cfg-dwell-short" min="1" max="5" value="${config.dwell_short_threshold || 1}" oninput="updateSliderDisplay(this, 'dwell-short-val', 'min')">
+                                                <span class="setting-value-display" id="dwell-short-val">${config.dwell_short_threshold || 1} min</span>
+                                            </div>
+                                        </div>
+                                        <div class="setting-row">
+                                            <div>
+                                                <div class="setting-label">Browsing</div>
+                                                <div class="setting-sublabel">X to Y minutes</div>
+                                            </div>
+                                            <div class="setting-value">
+                                                <input type="range" class="range-slider" id="cfg-dwell-medium" min="2" max="15" value="${config.dwell_medium_threshold || 5}" oninput="updateSliderDisplay(this, 'dwell-medium-val', 'min')">
+                                                <span class="setting-value-display" id="dwell-medium-val">${config.dwell_medium_threshold || 5} min</span>
+                                            </div>
+                                        </div>
+                                        <div class="setting-row">
+                                            <div>
+                                                <div class="setting-label">Shopping</div>
+                                                <div class="setting-sublabel">Y to Z minutes</div>
+                                            </div>
+                                            <div class="setting-value">
+                                                <input type="range" class="range-slider" id="cfg-dwell-long" min="5" max="30" value="${config.dwell_long_threshold || 10}" oninput="updateSliderDisplay(this, 'dwell-long-val', 'min')">
+                                                <span class="setting-value-display" id="dwell-long-val">${config.dwell_long_threshold || 10} min</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <button class="save-btn" id="save-config-btn" onclick="saveDeviceConfig('${device.device_id}')">
+                                        Save Configuration
+                                    </button>
+                                    <div class="config-version">Config version: ${config.config_version || 1}</div>
                                 </div>
                             </div>
                         </div>
@@ -1105,6 +1426,88 @@
             } catch (err) {
                 modal.innerHTML = '';
                 alert('Failed to load device details');
+            }
+        }
+
+        function switchTab(tabName, btn) {
+            // Update tab buttons
+            document.querySelectorAll('.modal-tab').forEach(t => t.classList.remove('active'));
+            btn.classList.add('active');
+
+            // Update tab content
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            document.getElementById(`tab-${tabName}`).classList.add('active');
+        }
+
+        function updateSliderDisplay(slider, displayId, unit) {
+            document.getElementById(displayId).textContent = `${slider.value} ${unit}`;
+        }
+
+        function updateIntervalDisplay() {
+            // No-op for dropdown, value is direct
+        }
+
+        async function saveDeviceConfig(deviceId) {
+            const btn = document.getElementById('save-config-btn');
+            const originalText = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = 'Saving...';
+
+            const config = {
+                report_interval_ms: parseInt(document.getElementById('cfg-interval').value),
+                rssi_immediate_threshold: parseInt(document.getElementById('cfg-rssi-imm').value),
+                rssi_near_threshold: parseInt(document.getElementById('cfg-rssi-near').value),
+                rssi_far_threshold: parseInt(document.getElementById('cfg-rssi-far').value),
+                dwell_short_threshold: parseInt(document.getElementById('cfg-dwell-short').value),
+                dwell_medium_threshold: parseInt(document.getElementById('cfg-dwell-medium').value),
+                dwell_long_threshold: parseInt(document.getElementById('cfg-dwell-long').value)
+            };
+
+            // Client-side validation
+            if (config.rssi_immediate_threshold <= config.rssi_near_threshold ||
+                config.rssi_near_threshold <= config.rssi_far_threshold) {
+                alert('RSSI thresholds must be in order: At Counter > In Store > Window Shopping');
+                btn.disabled = false;
+                btn.textContent = originalText;
+                return;
+            }
+
+            if (config.dwell_short_threshold >= config.dwell_medium_threshold ||
+                config.dwell_medium_threshold >= config.dwell_long_threshold) {
+                alert('Dwell thresholds must be in order: Quick Glance < Browsing < Shopping');
+                btn.disabled = false;
+                btn.textContent = originalText;
+                return;
+            }
+
+            try {
+                const res = await fetch(`${API_BASE}/device/${deviceId}/config`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(config)
+                });
+
+                const data = await res.json();
+
+                if (res.ok) {
+                    btn.classList.add('success');
+                    btn.textContent = 'Saved!';
+                    // Update version display
+                    if (data.config_version) {
+                        document.querySelector('.config-version').textContent = `Config version: ${data.config_version}`;
+                    }
+                    setTimeout(() => {
+                        btn.classList.remove('success');
+                        btn.textContent = originalText;
+                        btn.disabled = false;
+                    }, 2000);
+                } else {
+                    throw new Error(data.error || 'Failed to save');
+                }
+            } catch (err) {
+                alert(`Failed to save: ${err.message}`);
+                btn.disabled = false;
+                btn.textContent = originalText;
             }
         }
 

@@ -1,17 +1,22 @@
 #!/usr/bin/env python3
 """
-DataJam NB-IoT Backend Receiver v2.6
+DataJam NB-IoT Backend Receiver v2.9
 Production-ready with device authentication, management, device type classification,
 WiFi-based geolocation with automatic timezone detection, extended RSSI metrics,
-enhanced heartbeat tracking with uptime, and BLE device counting.
+enhanced heartbeat tracking with uptime, BLE device counting, OTA update system,
+data quality/auditability features, and remote device configuration.
+v2.9: Remote configuration of RSSI thresholds, dwell time buckets, and report intervals.
 """
 
 import sqlite3
 import secrets
 import hashlib
+import base64
+import json
 import requests
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from functools import wraps
+from pathlib import Path
 from flask import Flask, request, jsonify, g
 from timezonefinder import TimezoneFinder
 
@@ -23,6 +28,12 @@ ADMIN_KEY = "djnb-admin-2026-change-me"
 
 # Google Maps Geolocation API key
 GOOGLE_MAPS_API_KEY = "REDACTED_GOOGLE_KEY"
+
+# OTA Configuration
+OTA_BASE_DIR = Path("/opt/datajam-nbiot/ota")
+OTA_FIRMWARE_DIR = OTA_BASE_DIR / "firmware"
+OTA_PATCHES_DIR = OTA_BASE_DIR / "patches"
+OTA_CHUNK_SIZE = 512  # bytes per chunk
 
 # TimezoneFinder instance
 tf = TimezoneFinder()
@@ -102,20 +113,68 @@ def init_db():
         ip_address TEXT
     )""")
 
-    # Device configs for remote configuration
+    # Device configs for remote configuration (v2.9 - added RSSI/dwell thresholds)
     conn.execute("""CREATE TABLE IF NOT EXISTS device_configs (
         device_id TEXT PRIMARY KEY,
         report_interval_ms INTEGER DEFAULT 300000,
         heartbeat_interval_ms INTEGER DEFAULT 86400000,
         geolocation_on_boot INTEGER DEFAULT 1,
         wifi_channels TEXT DEFAULT '1,6,11',
+        rssi_immediate_threshold INTEGER DEFAULT -50,
+        rssi_near_threshold INTEGER DEFAULT -65,
+        rssi_far_threshold INTEGER DEFAULT -80,
+        dwell_short_threshold INTEGER DEFAULT 1,
+        dwell_medium_threshold INTEGER DEFAULT 5,
+        dwell_long_threshold INTEGER DEFAULT 10,
+        config_version INTEGER DEFAULT 1,
         updated_at TEXT
+    )""")
+
+    # OTA: Firmware versions registry (local SQLite mirror)
+    conn.execute("""CREATE TABLE IF NOT EXISTS firmware_versions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        version TEXT UNIQUE NOT NULL,
+        release_date TEXT NOT NULL,
+        binary_size INTEGER NOT NULL,
+        sha256 TEXT NOT NULL,
+        release_notes TEXT,
+        is_current INTEGER DEFAULT 0,
+        created_at TEXT NOT NULL
+    )""")
+
+    # OTA: Delta patches between versions
+    conn.execute("""CREATE TABLE IF NOT EXISTS ota_patches (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        from_version TEXT NOT NULL,
+        to_version TEXT NOT NULL,
+        patch_size INTEGER NOT NULL,
+        chunk_count INTEGER NOT NULL,
+        sha256 TEXT NOT NULL,
+        compression TEXT DEFAULT 'heatshrink',
+        created_at TEXT NOT NULL,
+        UNIQUE(from_version, to_version)
+    )""")
+
+    # OTA: Device update progress
+    conn.execute("""CREATE TABLE IF NOT EXISTS device_ota_progress (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        device_id TEXT NOT NULL,
+        target_version TEXT NOT NULL,
+        chunks_received INTEGER DEFAULT 0,
+        total_chunks INTEGER NOT NULL,
+        started_at TEXT NOT NULL,
+        last_chunk_at TEXT,
+        status TEXT DEFAULT 'pending',
+        error_message TEXT,
+        UNIQUE(device_id, target_version)
     )""")
 
     # Indexes
     conn.execute("CREATE INDEX IF NOT EXISTS idx_readings_device_time ON readings(device_id, timestamp)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_readings_unsynced ON readings(synced_to_supabase)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_devices_status ON devices(status)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_ota_progress_device ON device_ota_progress(device_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_firmware_current ON firmware_versions(is_current)")
 
     # Migration: Add columns if they don't exist (for existing databases)
     migrations = [
@@ -145,6 +204,22 @@ def init_db():
         ("readings", "ble_android", "INTEGER DEFAULT 0"),
         ("readings", "ble_other", "INTEGER DEFAULT 0"),
         ("readings", "ble_rssi_avg", "INTEGER"),
+        # OTA (v2.7)
+        ("devices", "pending_command", "TEXT"),
+        # Data quality & auditability (v2.8)
+        ("readings", "period_start_ts", "TEXT"),
+        ("readings", "overflow_count", "INTEGER DEFAULT 0"),
+        ("readings", "cache_depth", "INTEGER DEFAULT 0"),
+        ("readings", "send_failures", "INTEGER DEFAULT 0"),
+        ("readings", "age_seconds", "INTEGER DEFAULT 0"),
+        # Remote device configuration thresholds (v2.9)
+        ("device_configs", "rssi_immediate_threshold", "INTEGER DEFAULT -50"),
+        ("device_configs", "rssi_near_threshold", "INTEGER DEFAULT -65"),
+        ("device_configs", "rssi_far_threshold", "INTEGER DEFAULT -80"),
+        ("device_configs", "dwell_short_threshold", "INTEGER DEFAULT 1"),
+        ("device_configs", "dwell_medium_threshold", "INTEGER DEFAULT 5"),
+        ("device_configs", "dwell_long_threshold", "INTEGER DEFAULT 10"),
+        ("device_configs", "config_version", "INTEGER DEFAULT 1"),
     ]
 
     for table, column, col_type in migrations:
@@ -153,6 +228,19 @@ def init_db():
             print(f"[MIGRATION] Added column {table}.{column}")
         except sqlite3.OperationalError:
             pass  # Column already exists
+
+    # Create unique index for idempotent inserts (v2.8)
+    # This prevents duplicate readings from being inserted
+    try:
+        conn.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_readings_period
+            ON readings(device_id, period_start_ts)
+            WHERE period_start_ts IS NOT NULL
+        """)
+        print("[MIGRATION] Created unique index idx_readings_period")
+    except sqlite3.OperationalError as e:
+        if "already exists" not in str(e):
+            print(f"[MIGRATION] Index creation note: {e}")
 
     conn.commit()
     conn.close()
@@ -189,8 +277,14 @@ def require_device_auth(f):
             return jsonify({"error": "Missing Authorization header"}), 401
 
         token = auth[7:]  # Remove 'Bearer '
+
+        # Try to get device_id from JSON body first, then query params
         data = request.get_json(silent=True) or {}
         device_id = data.get('d') or data.get('device_id')
+
+        # For GET requests, also check query parameters
+        if not device_id:
+            device_id = request.args.get('d') or request.args.get('device_id')
 
         if not device_id:
             return jsonify({"error": "Missing device_id"}), 400
@@ -218,6 +312,21 @@ def require_admin(f):
         return f(*args, **kwargs)
     return decorated
 
+# ============== Utility Functions ==============
+
+def calculate_crc16(data: bytes) -> int:
+    """Calculate CRC16-CCITT for chunk verification."""
+    crc = 0xFFFF
+    for byte in data:
+        crc ^= byte << 8
+        for _ in range(8):
+            if crc & 0x8000:
+                crc = (crc << 1) ^ 0x1021
+            else:
+                crc <<= 1
+            crc &= 0xFFFF
+    return crc
+
 # ============== Public Endpoints ==============
 
 @app.route("/health")
@@ -226,7 +335,7 @@ def health():
     return jsonify({
         "status": "ok",
         "service": "datajam-nbiot-receiver",
-        "version": "2.6"
+        "version": "2.9"
     })
 
 # ============== Device Endpoints (require device token) ==============
@@ -277,39 +386,64 @@ def receive_reading():
         ble_other = data.get('ble_other', 0) or 0
         ble_rssi_avg = data.get('ble_rssi_avg')
 
+        # Data quality/auditability fields (v5.3 firmware / v2.8 backend)
+        overflow_count = data.get('of', 0) or 0    # Uniques dropped due to cap
+        cache_depth = data.get('cd', 0) or 0       # Cache depth when sent
+        send_failures = data.get('sf', 0) or 0     # Consecutive failures before this
+        age_seconds = data.get('age', 0) or 0      # 0 = live, >0 = cached reading
+
         # Keep signal_dbm for backwards compatibility in database
         signal_dbm = cell_rssi
 
         if not all([timestamp is not None, impressions is not None, unique_count is not None]):
             return jsonify({"error": "Missing required fields: t, i, u"}), 400
 
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(timezone.utc)
+        received_at = now.isoformat()
+
+        # Calculate period_start_ts: when this reading's period actually occurred
+        # For cached readings (age > 0), we subtract age from receive time
+        period_time = now - timedelta(seconds=age_seconds)
+        # Normalize to 5-minute boundary (bucket)
+        period_start = period_time.replace(
+            minute=(period_time.minute // 5) * 5,
+            second=0,
+            microsecond=0
+        )
+        period_start_ts = period_start.isoformat()
+
         conn = get_db()
 
-        # Insert reading with all fields
-        conn.execute("""
-            INSERT INTO readings (device_id, timestamp, impressions, unique_count,
+        # Idempotent insert: INSERT OR IGNORE to prevent duplicates
+        # Unique constraint on (device_id, period_start_ts) prevents re-ingestion
+        cursor = conn.execute("""
+            INSERT OR IGNORE INTO readings (device_id, timestamp, impressions, unique_count,
                                   signal_dbm, battery_pct, firmware_version,
                                   apple_count, android_count, other_count,
                                   probe_rssi_avg, probe_rssi_min, probe_rssi_max,
                                   cell_rssi, dwell_0_1, dwell_1_5, dwell_5_10, dwell_10plus,
                                   rssi_immediate, rssi_near, rssi_far, rssi_remote,
                                   ble_impressions, ble_unique, ble_apple, ble_android, ble_other, ble_rssi_avg,
+                                  period_start_ts, overflow_count, cache_depth, send_failures, age_seconds,
                                   received_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (device_id, timestamp, impressions, unique_count, signal_dbm,
               battery_pct, firmware, apple_count, android_count, other_count,
               probe_rssi_avg, probe_rssi_min, probe_rssi_max, cell_rssi,
               dwell_0_1, dwell_1_5, dwell_5_10, dwell_10plus,
               rssi_immediate, rssi_near, rssi_far, rssi_remote,
-              ble_impressions, ble_unique, ble_apple, ble_android, ble_other, ble_rssi_avg, now))
+              ble_impressions, ble_unique, ble_apple, ble_android, ble_other, ble_rssi_avg,
+              period_start_ts, overflow_count, cache_depth, send_failures, age_seconds, received_at))
+
+        # Check if insert actually happened (or was ignored as duplicate)
+        was_duplicate = cursor.rowcount == 0
 
         # Update device last_seen
         conn.execute("""
             UPDATE devices SET last_seen_at = ?, last_signal_dbm = ?, last_battery_pct = ?,
                                firmware_version = COALESCE(?, firmware_version)
             WHERE device_id = ?
-        """, (now, signal_dbm, battery_pct, firmware, device_id))
+        """, (received_at, signal_dbm, battery_pct, firmware, device_id))
 
         conn.commit()
 
@@ -326,12 +460,18 @@ def receive_reading():
         ble_info = ""
         if any([ble_impressions, ble_unique]):
             ble_info = f" BLE(i:{ble_impressions} u:{ble_unique} Apple:{ble_apple} Android:{ble_android} Other:{ble_other})"
+        quality_info = ""
+        if any([overflow_count, cache_depth, send_failures, age_seconds]):
+            quality_info = f" quality(of:{overflow_count} cd:{cache_depth} sf:{send_failures} age:{age_seconds}s)"
+        dup_info = " [DUPLICATE]" if was_duplicate else ""
         print(f"[READING] {device_id}: {impressions} probes, {unique_count} unique "
               f"(Apple:{apple_count} Android:{android_count} Other:{other_count}) "
-              f"cell_rssi:{cell_rssi}{rssi_info}{dwell_info}{zone_info}{ble_info} @ {timestamp}")
+              f"cell_rssi:{cell_rssi}{rssi_info}{dwell_info}{zone_info}{ble_info}{quality_info}{dup_info} @ {period_start_ts}")
 
         # Check for pending command
         response = {"status": "ok"}
+        if was_duplicate:
+            response["note"] = "duplicate_ignored"
 
         device_row = conn.execute("SELECT pending_command FROM devices WHERE device_id = ?", (device_id,)).fetchone()
         if device_row and device_row['pending_command']:
@@ -390,6 +530,10 @@ def heartbeat():
         # Check for pending command
         response = {"status": "ok", "server_time": now}
 
+        # Include config_version so device knows if it needs to fetch new config
+        config_row = conn.execute("SELECT config_version FROM device_configs WHERE device_id = ?", (device_id,)).fetchone()
+        response['config_version'] = config_row['config_version'] if config_row else 1
+
         device_row = conn.execute("SELECT pending_command FROM devices WHERE device_id = ?", (device_id,)).fetchone()
         if device_row and device_row['pending_command']:
             command = device_row['pending_command']
@@ -431,11 +575,19 @@ def get_device_config(device_id):
 
         if config:
             response = {
-                "config_version": 1,
+                "config_version": config.get('config_version', 1) if hasattr(config, 'get') else (config['config_version'] if 'config_version' in config.keys() else 1),
                 "report_interval_ms": config['report_interval_ms'],
                 "heartbeat_interval_ms": config['heartbeat_interval_ms'],
                 "geolocation_on_boot": bool(config['geolocation_on_boot']),
                 "wifi_channels": [int(c) for c in config['wifi_channels'].split(',')],
+                # RSSI thresholds (v2.9)
+                "rssi_immediate_threshold": config['rssi_immediate_threshold'] if 'rssi_immediate_threshold' in config.keys() else -50,
+                "rssi_near_threshold": config['rssi_near_threshold'] if 'rssi_near_threshold' in config.keys() else -65,
+                "rssi_far_threshold": config['rssi_far_threshold'] if 'rssi_far_threshold' in config.keys() else -80,
+                # Dwell time thresholds (v2.9)
+                "dwell_short_threshold": config['dwell_short_threshold'] if 'dwell_short_threshold' in config.keys() else 1,
+                "dwell_medium_threshold": config['dwell_medium_threshold'] if 'dwell_medium_threshold' in config.keys() else 5,
+                "dwell_long_threshold": config['dwell_long_threshold'] if 'dwell_long_threshold' in config.keys() else 10,
                 "updated_at": config['updated_at']
             }
         else:
@@ -446,10 +598,18 @@ def get_device_config(device_id):
                 "heartbeat_interval_ms": 86400000, # 24 hours
                 "geolocation_on_boot": True,
                 "wifi_channels": [1, 6, 11],
+                # RSSI thresholds (v2.9)
+                "rssi_immediate_threshold": -50,
+                "rssi_near_threshold": -65,
+                "rssi_far_threshold": -80,
+                # Dwell time thresholds (v2.9)
+                "dwell_short_threshold": 1,
+                "dwell_medium_threshold": 5,
+                "dwell_long_threshold": 10,
                 "updated_at": None
             }
 
-        print(f"[CONFIG] {device_id}: interval={response['report_interval_ms']}ms")
+        print(f"[CONFIG] {device_id}: interval={response['report_interval_ms']}ms v{response['config_version']}")
         return jsonify(response), 200
 
     except Exception as e:
@@ -464,26 +624,75 @@ def update_device_config(device_id):
         data = request.get_json()
         conn = get_db()
 
-        # Upsert config
+        # Validate RSSI thresholds (must be in order: immediate > near > far)
+        rssi_immediate = data.get('rssi_immediate_threshold', -50)
+        rssi_near = data.get('rssi_near_threshold', -65)
+        rssi_far = data.get('rssi_far_threshold', -80)
+
+        if not (-30 >= rssi_immediate >= -60):
+            return jsonify({"error": "rssi_immediate_threshold must be between -30 and -60"}), 400
+        if not (-50 >= rssi_near >= -75):
+            return jsonify({"error": "rssi_near_threshold must be between -50 and -75"}), 400
+        if not (-65 >= rssi_far >= -90):
+            return jsonify({"error": "rssi_far_threshold must be between -65 and -90"}), 400
+        if not (rssi_immediate > rssi_near > rssi_far):
+            return jsonify({"error": "RSSI thresholds must be in order: immediate > near > far"}), 400
+
+        # Validate dwell thresholds
+        dwell_short = data.get('dwell_short_threshold', 1)
+        dwell_medium = data.get('dwell_medium_threshold', 5)
+        dwell_long = data.get('dwell_long_threshold', 10)
+
+        if not (1 <= dwell_short <= 5):
+            return jsonify({"error": "dwell_short_threshold must be between 1 and 5"}), 400
+        if not (2 <= dwell_medium <= 15):
+            return jsonify({"error": "dwell_medium_threshold must be between 2 and 15"}), 400
+        if not (5 <= dwell_long <= 30):
+            return jsonify({"error": "dwell_long_threshold must be between 5 and 30"}), 400
+        if not (dwell_short < dwell_medium < dwell_long):
+            return jsonify({"error": "Dwell thresholds must be in order: short < medium < long"}), 400
+
+        # Validate report interval (1-60 minutes)
+        report_interval = data.get('report_interval_ms', 300000)
+        if not (60000 <= report_interval <= 3600000):
+            return jsonify({"error": "report_interval_ms must be between 60000 (1 min) and 3600000 (60 min)"}), 400
+
+        # Get current config_version and increment
+        existing = conn.execute(
+            "SELECT config_version FROM device_configs WHERE device_id = ?",
+            (device_id,)
+        ).fetchone()
+        new_version = (existing['config_version'] + 1) if existing and existing['config_version'] else 1
+
         now = datetime.now(timezone.utc).isoformat()
         wifi_channels = ','.join(str(c) for c in data.get('wifi_channels', [1, 6, 11]))
 
         conn.execute("""
             INSERT OR REPLACE INTO device_configs
-            (device_id, report_interval_ms, heartbeat_interval_ms, geolocation_on_boot, wifi_channels, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            (device_id, report_interval_ms, heartbeat_interval_ms, geolocation_on_boot, wifi_channels,
+             rssi_immediate_threshold, rssi_near_threshold, rssi_far_threshold,
+             dwell_short_threshold, dwell_medium_threshold, dwell_long_threshold,
+             config_version, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             device_id,
-            data.get('report_interval_ms', 300000),
+            report_interval,
             data.get('heartbeat_interval_ms', 86400000),
             1 if data.get('geolocation_on_boot', True) else 0,
             wifi_channels,
+            rssi_immediate,
+            rssi_near,
+            rssi_far,
+            dwell_short,
+            dwell_medium,
+            dwell_long,
+            new_version,
             now
         ))
         conn.commit()
 
-        print(f"[CONFIG] Updated config for {device_id}")
-        return jsonify({"status": "ok", "updated_at": now}), 200
+        print(f"[CONFIG] Updated config for {device_id} -> v{new_version}")
+        return jsonify({"status": "ok", "config_version": new_version, "updated_at": now}), 200
 
     except Exception as e:
         print(f"[ERROR] update_device_config: {e}", flush=True)
@@ -590,6 +799,394 @@ def receive_geolocation():
         print(f"[ERROR] receive_geolocation: {e}", flush=True)
         return jsonify({"error": str(e)}), 500
 
+# ============== OTA Update Endpoints ==============
+
+@app.route("/api/ota/check", methods=["POST"])
+@require_device_auth
+def ota_check():
+    """
+    Device checks for available firmware updates.
+    Request: {"d": "JBNB0001", "v": "4.6"}
+    Response: {"update_available": true, "target_version": "4.7", "patch_size": 12345, "chunk_count": 25}
+    """
+    try:
+        data = request.get_json()
+        device_id = g.device_id
+        current_version = data.get('v') or data.get('version')
+
+        if not current_version:
+            return jsonify({"error": "Missing current version (v)"}), 400
+
+        conn = get_db()
+
+        # Get current firmware version
+        current_fw = conn.execute(
+            "SELECT version FROM firmware_versions WHERE is_current = 1"
+        ).fetchone()
+
+        if not current_fw:
+            print(f"[OTA] {device_id}: No current firmware registered")
+            return jsonify({"update_available": False, "reason": "no_current_firmware"}), 200
+
+        target_version = current_fw['version']
+
+        # Check if device already has latest
+        if current_version == target_version:
+            print(f"[OTA] {device_id}: Already on latest v{target_version}")
+            return jsonify({"update_available": False, "reason": "up_to_date"}), 200
+
+        # Check if patch exists
+        patch = conn.execute("""
+            SELECT patch_size, chunk_count, sha256
+            FROM ota_patches
+            WHERE from_version = ? AND to_version = ?
+        """, (current_version, target_version)).fetchone()
+
+        if not patch:
+            print(f"[OTA] {device_id}: No patch from v{current_version} to v{target_version}")
+            return jsonify({
+                "update_available": False,
+                "reason": "no_patch",
+                "current": current_version,
+                "target": target_version
+            }), 200
+
+        # Check if device already has an in-progress update
+        progress = conn.execute("""
+            SELECT status, chunks_received, total_chunks
+            FROM device_ota_progress
+            WHERE device_id = ? AND target_version = ?
+        """, (device_id, target_version)).fetchone()
+
+        response = {
+            "update_available": True,
+            "target_version": target_version,
+            "patch_size": patch['patch_size'],
+            "chunk_count": patch['chunk_count'],
+            "chunk_size": OTA_CHUNK_SIZE,
+            "patch_sha256": patch['sha256']
+        }
+
+        if progress:
+            response["resume_from"] = progress['chunks_received']
+            response["status"] = progress['status']
+            print(f"[OTA] {device_id}: Resume update to v{target_version} from chunk {progress['chunks_received']}")
+        else:
+            # Create new progress record
+            now = datetime.now(timezone.utc).isoformat()
+            conn.execute("""
+                INSERT INTO device_ota_progress (device_id, target_version, total_chunks, started_at, status)
+                VALUES (?, ?, ?, ?, 'pending')
+            """, (device_id, target_version, patch['chunk_count'], now))
+            conn.commit()
+            response["resume_from"] = 0
+            response["status"] = "pending"
+            print(f"[OTA] {device_id}: New update available v{current_version} -> v{target_version}")
+
+        return jsonify(response), 200
+
+    except Exception as e:
+        print(f"[ERROR] ota_check: {e}", flush=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/ota/chunk", methods=["GET"])
+@require_device_auth
+def ota_get_chunk():
+    """
+    Get a single chunk of the OTA patch.
+    Query params: ?d=JBNB0001&from=4.6&to=4.7&chunk=0
+    Response: {"chunk": 0, "data": "base64...", "crc16": 12345, "total": 25}
+    """
+    try:
+        device_id = request.args.get('d') or g.device_id
+        from_version = request.args.get('from')
+        to_version = request.args.get('to')
+        chunk_index = request.args.get('chunk', type=int)
+
+        if not all([from_version, to_version, chunk_index is not None]):
+            return jsonify({"error": "Missing required params: from, to, chunk"}), 400
+
+        # Load patch file
+        patch_path = OTA_PATCHES_DIR / f"patch_{from_version}_to_{to_version}.bin"
+        if not patch_path.exists():
+            return jsonify({"error": "Patch not found"}), 404
+
+        # Load metadata for CRC verification
+        meta_path = OTA_PATCHES_DIR / f"patch_{from_version}_to_{to_version}.json"
+        if not meta_path.exists():
+            return jsonify({"error": "Patch metadata not found"}), 404
+
+        with open(meta_path) as f:
+            metadata = json.load(f)
+
+        total_chunks = metadata['chunk_count']
+
+        if chunk_index < 0 or chunk_index >= total_chunks:
+            return jsonify({"error": f"Invalid chunk index. Valid: 0-{total_chunks-1}"}), 400
+
+        # Read the specific chunk
+        with open(patch_path, 'rb') as f:
+            f.seek(chunk_index * OTA_CHUNK_SIZE)
+            chunk_data = f.read(OTA_CHUNK_SIZE)
+
+        # Calculate CRC16 for this chunk
+        crc16 = calculate_crc16(chunk_data)
+
+        # Base64 encode for JSON transport
+        chunk_b64 = base64.b64encode(chunk_data).decode('ascii')
+
+        # Update progress
+        conn = get_db()
+        now = datetime.now(timezone.utc).isoformat()
+        conn.execute("""
+            UPDATE device_ota_progress
+            SET chunks_received = ?, last_chunk_at = ?, status = 'downloading'
+            WHERE device_id = ? AND target_version = ? AND chunks_received < ?
+        """, (chunk_index + 1, now, device_id, to_version, chunk_index + 1))
+        conn.commit()
+
+        print(f"[OTA] {device_id}: Chunk {chunk_index + 1}/{total_chunks} ({len(chunk_data)} bytes)")
+
+        return jsonify({
+            "chunk": chunk_index,
+            "data": chunk_b64,
+            "size": len(chunk_data),
+            "crc16": crc16,
+            "total": total_chunks
+        }), 200
+
+    except Exception as e:
+        print(f"[ERROR] ota_get_chunk: {e}", flush=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/ota/complete", methods=["POST"])
+@require_device_auth
+def ota_complete():
+    """
+    Device reports successful OTA update.
+    Request: {"d": "JBNB0001", "v": "4.7", "success": true}
+    """
+    try:
+        data = request.get_json()
+        device_id = g.device_id
+        new_version = data.get('v') or data.get('version')
+        success = data.get('success', False)
+        error_message = data.get('error')
+
+        if not new_version:
+            return jsonify({"error": "Missing version (v)"}), 400
+
+        conn = get_db()
+        now = datetime.now(timezone.utc).isoformat()
+
+        if success:
+            # Update progress to complete
+            conn.execute("""
+                UPDATE device_ota_progress
+                SET status = 'complete', last_chunk_at = ?
+                WHERE device_id = ? AND target_version = ?
+            """, (now, device_id, new_version))
+
+            # Update device firmware version
+            conn.execute("""
+                UPDATE devices
+                SET firmware_version = ?, last_seen_at = ?
+                WHERE device_id = ?
+            """, (new_version, now, device_id))
+
+            conn.commit()
+            print(f"[OTA] {device_id}: Update to v{new_version} COMPLETE")
+
+            return jsonify({"status": "ok", "message": "OTA update confirmed"}), 200
+
+        else:
+            # Update progress to failed
+            conn.execute("""
+                UPDATE device_ota_progress
+                SET status = 'failed', error_message = ?, last_chunk_at = ?
+                WHERE device_id = ? AND target_version = ?
+            """, (error_message, now, device_id, new_version))
+            conn.commit()
+
+            print(f"[OTA] {device_id}: Update to v{new_version} FAILED - {error_message}")
+
+            return jsonify({"status": "failed", "message": error_message}), 200
+
+    except Exception as e:
+        print(f"[ERROR] ota_complete: {e}", flush=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/ota/register-firmware", methods=["POST"])
+@require_admin
+def ota_register_firmware():
+    """
+    Register a new firmware version (admin only).
+    Request: {"version": "4.7", "binary_size": 456789, "sha256": "abc123...", "release_notes": "...", "is_current": true}
+    """
+    try:
+        data = request.get_json()
+        version = data.get('version')
+        binary_size = data.get('binary_size')
+        sha256 = data.get('sha256')
+        release_notes = data.get('release_notes', '')
+        is_current = data.get('is_current', False)
+
+        if not all([version, binary_size, sha256]):
+            return jsonify({"error": "Missing required fields: version, binary_size, sha256"}), 400
+
+        conn = get_db()
+        now = datetime.now(timezone.utc).isoformat()
+
+        # If marking as current, unset previous current
+        if is_current:
+            conn.execute("UPDATE firmware_versions SET is_current = 0 WHERE is_current = 1")
+
+        # Insert or update firmware version
+        try:
+            conn.execute("""
+                INSERT INTO firmware_versions (version, release_date, binary_size, sha256, release_notes, is_current, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (version, now, binary_size, sha256, release_notes, 1 if is_current else 0, now))
+        except sqlite3.IntegrityError:
+            # Version exists, update it
+            conn.execute("""
+                UPDATE firmware_versions
+                SET binary_size = ?, sha256 = ?, release_notes = ?, is_current = ?
+                WHERE version = ?
+            """, (binary_size, sha256, release_notes, 1 if is_current else 0, version))
+
+        conn.commit()
+
+        print(f"[OTA] Registered firmware v{version} (current={is_current})")
+
+        return jsonify({
+            "status": "ok",
+            "version": version,
+            "is_current": is_current
+        }), 201
+
+    except Exception as e:
+        print(f"[ERROR] ota_register_firmware: {e}", flush=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/ota/register-patch", methods=["POST"])
+@require_admin
+def ota_register_patch():
+    """
+    Register a patch after generation (admin only).
+    Request: {"from_version": "4.6", "to_version": "4.7", "patch_size": 12345, "chunk_count": 25, "sha256": "abc..."}
+    """
+    try:
+        data = request.get_json()
+        from_version = data.get('from_version')
+        to_version = data.get('to_version')
+        patch_size = data.get('patch_size')
+        chunk_count = data.get('chunk_count')
+        sha256 = data.get('sha256')
+        compression = data.get('compression', 'heatshrink')
+
+        if not all([from_version, to_version, patch_size, chunk_count, sha256]):
+            return jsonify({"error": "Missing required fields"}), 400
+
+        conn = get_db()
+        now = datetime.now(timezone.utc).isoformat()
+
+        try:
+            conn.execute("""
+                INSERT INTO ota_patches (from_version, to_version, patch_size, chunk_count, sha256, compression, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (from_version, to_version, patch_size, chunk_count, sha256, compression, now))
+        except sqlite3.IntegrityError:
+            conn.execute("""
+                UPDATE ota_patches
+                SET patch_size = ?, chunk_count = ?, sha256 = ?, compression = ?
+                WHERE from_version = ? AND to_version = ?
+            """, (patch_size, chunk_count, sha256, compression, from_version, to_version))
+
+        conn.commit()
+
+        print(f"[OTA] Registered patch v{from_version} -> v{to_version} ({patch_size} bytes, {chunk_count} chunks)")
+
+        return jsonify({
+            "status": "ok",
+            "from_version": from_version,
+            "to_version": to_version,
+            "chunk_count": chunk_count
+        }), 201
+
+    except Exception as e:
+        print(f"[ERROR] ota_register_patch: {e}", flush=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/ota/status", methods=["GET"])
+@require_admin
+def ota_status():
+    """
+    Get OTA status for all devices (admin only).
+    Returns firmware versions, patches, and device update progress.
+    """
+    try:
+        conn = get_db()
+
+        # Get all firmware versions
+        firmware = conn.execute("""
+            SELECT version, release_date, binary_size, sha256, release_notes, is_current
+            FROM firmware_versions
+            ORDER BY created_at DESC
+        """).fetchall()
+
+        # Get all patches
+        patches = conn.execute("""
+            SELECT from_version, to_version, patch_size, chunk_count, sha256, compression, created_at
+            FROM ota_patches
+            ORDER BY created_at DESC
+        """).fetchall()
+
+        # Get device update progress
+        progress = conn.execute("""
+            SELECT p.device_id, p.target_version, p.chunks_received, p.total_chunks,
+                   p.started_at, p.last_chunk_at, p.status, p.error_message,
+                   d.firmware_version as current_version
+            FROM device_ota_progress p
+            JOIN devices d ON p.device_id = d.device_id
+            ORDER BY p.started_at DESC
+            LIMIT 50
+        """).fetchall()
+
+        # Get devices needing updates
+        current_fw = conn.execute(
+            "SELECT version FROM firmware_versions WHERE is_current = 1"
+        ).fetchone()
+
+        devices_needing_update = []
+        if current_fw:
+            devices = conn.execute("""
+                SELECT device_id, firmware_version, last_seen_at
+                FROM devices
+                WHERE status = 'active'
+                  AND firmware_version IS NOT NULL
+                  AND firmware_version != ?
+            """, (current_fw['version'],)).fetchall()
+            devices_needing_update = [dict(d) for d in devices]
+
+        return jsonify({
+            "current_version": current_fw['version'] if current_fw else None,
+            "firmware_versions": [dict(f) for f in firmware],
+            "patches": [dict(p) for p in patches],
+            "update_progress": [dict(p) for p in progress],
+            "devices_needing_update": devices_needing_update
+        }), 200
+
+    except Exception as e:
+        print(f"[ERROR] ota_status: {e}", flush=True)
+        return jsonify({"error": str(e)}), 500
+
+
 # ============== Admin Endpoints ==============
 
 @app.route("/api/device/register", methods=["POST"])
@@ -689,7 +1286,7 @@ def queue_command(device_id):
         data = request.get_json()
         command = data.get('command')
 
-        valid_commands = ['reboot', 'send_now', 'geolocate']
+        valid_commands = ['reboot', 'send_now', 'geolocate', 'ota_check']
         if command not in valid_commands:
             return jsonify({"error": f"Invalid command. Use: {', '.join(valid_commands)}"}), 400
 
@@ -886,7 +1483,13 @@ def get_heartbeats():
 
 if __name__ == "__main__":
     init_db()
-    print("DataJam NB-IoT Receiver v2.6 starting on port 5000...")
-    print("Features: Device auth, ISO timestamps, Apple/Android/Other classification, extended RSSI metrics, WiFi geolocation, heartbeat with uptime, device PIN, BLE counting")
+    # Ensure OTA directories exist
+    OTA_FIRMWARE_DIR.mkdir(parents=True, exist_ok=True)
+    OTA_PATCHES_DIR.mkdir(parents=True, exist_ok=True)
+    print("DataJam NB-IoT Receiver v2.9 starting on port 5000...")
+    print("Features: Device auth, ISO timestamps, Apple/Android/Other classification, extended RSSI metrics,")
+    print("          WiFi geolocation, heartbeat with uptime, device PIN, BLE counting, OTA updates,")
+    print("          Remote device configuration (RSSI/dwell thresholds, report intervals)")
+    print(f"OTA Directory: {OTA_BASE_DIR}")
     print(f"Admin key: {ADMIN_KEY}")
     app.run(host="0.0.0.0", port=5000)

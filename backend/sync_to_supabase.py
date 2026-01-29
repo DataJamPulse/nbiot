@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Sync readings and devices from local SQLite to Supabase.
+Sync readings, devices, OTA data, and device configs from local SQLite to Supabase.
 Runs as a cron job every 5 minutes.
-Updated for v2.6 - includes BLE device counting fields.
+Updated for v2.9 - includes remote device configuration sync.
 """
 
 import sqlite3
@@ -37,6 +37,7 @@ def get_unsynced_readings():
                dwell_0_1, dwell_1_5, dwell_5_10, dwell_10plus,
                rssi_immediate, rssi_near, rssi_far, rssi_remote,
                ble_impressions, ble_unique, ble_apple, ble_android, ble_other, ble_rssi_avg,
+               period_start_ts, overflow_count, cache_depth, send_failures, age_seconds,
                received_at
         FROM readings
         WHERE synced_to_supabase = 0
@@ -92,6 +93,12 @@ def sync_readings_to_supabase(readings):
             "ble_android": r.get("ble_android", 0) or 0,
             "ble_other": r.get("ble_other", 0) or 0,
             "ble_rssi_avg": r.get("ble_rssi_avg"),
+            # Data quality/auditability fields (v2.8)
+            "period_start_ts": r.get("period_start_ts"),
+            "overflow_count": r.get("overflow_count", 0) or 0,
+            "cache_depth": r.get("cache_depth", 0) or 0,
+            "send_failures": r.get("send_failures", 0) or 0,
+            "age_seconds": r.get("age_seconds", 0) or 0,
             "received_at": r["received_at"]
         })
 
@@ -172,6 +179,234 @@ def sync_devices_to_supabase(devices):
         print(f"Devices sync error: {e}")
         return False
 
+def get_firmware_versions():
+    """Get all firmware versions from local database."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    try:
+        cursor = conn.execute("""
+            SELECT version, release_date, binary_size, sha256,
+                   release_notes, is_current, created_at
+            FROM firmware_versions
+        """)
+        rows = cursor.fetchall()
+        conn.close()
+        return [dict(row) for row in rows]
+    except sqlite3.OperationalError:
+        conn.close()
+        return []  # Table doesn't exist yet
+
+def sync_firmware_versions_to_supabase(firmware_versions):
+    """Upsert firmware versions to Supabase."""
+    if not firmware_versions:
+        return True
+
+    supabase_rows = []
+    for f in firmware_versions:
+        supabase_rows.append({
+            "version": f["version"],
+            "release_date": f["release_date"],
+            "binary_size": f["binary_size"],
+            "sha256": f["sha256"],
+            "release_notes": f["release_notes"],
+            "is_current": bool(f["is_current"]),
+            "created_at": f["created_at"]
+        })
+
+    url = f"{SUPABASE_URL}/rest/v1/firmware_versions"
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json",
+        "Prefer": "resolution=merge-duplicates,return=minimal"
+    }
+
+    try:
+        response = requests.post(url, headers=headers, json=supabase_rows)
+        if response.status_code in (200, 201):
+            print(f"Synced {len(firmware_versions)} firmware versions to Supabase")
+            return True
+        else:
+            print(f"Supabase firmware_versions error: {response.status_code} - {response.text}")
+            return False
+    except Exception as e:
+        print(f"Firmware versions sync error: {e}")
+        return False
+
+def get_ota_patches():
+    """Get all OTA patches from local database."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    try:
+        cursor = conn.execute("""
+            SELECT from_version, to_version, patch_size, chunk_count,
+                   sha256, compression, created_at
+            FROM ota_patches
+        """)
+        rows = cursor.fetchall()
+        conn.close()
+        return [dict(row) for row in rows]
+    except sqlite3.OperationalError:
+        conn.close()
+        return []  # Table doesn't exist yet
+
+def sync_ota_patches_to_supabase(patches):
+    """Upsert OTA patches to Supabase."""
+    if not patches:
+        return True
+
+    supabase_rows = []
+    for p in patches:
+        supabase_rows.append({
+            "from_version": p["from_version"],
+            "to_version": p["to_version"],
+            "patch_size": p["patch_size"],
+            "chunk_count": p["chunk_count"],
+            "sha256": p["sha256"],
+            "compression": p["compression"],
+            "created_at": p["created_at"]
+        })
+
+    url = f"{SUPABASE_URL}/rest/v1/ota_patches"
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json",
+        "Prefer": "resolution=merge-duplicates,return=minimal"
+    }
+
+    try:
+        response = requests.post(url, headers=headers, json=supabase_rows)
+        if response.status_code in (200, 201):
+            print(f"Synced {len(patches)} OTA patches to Supabase")
+            return True
+        else:
+            print(f"Supabase ota_patches error: {response.status_code} - {response.text}")
+            return False
+    except Exception as e:
+        print(f"OTA patches sync error: {e}")
+        return False
+
+def get_device_ota_progress():
+    """Get device OTA progress from local database."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    try:
+        cursor = conn.execute("""
+            SELECT device_id, target_version, chunks_received, total_chunks,
+                   started_at, last_chunk_at, status, error_message
+            FROM device_ota_progress
+        """)
+        rows = cursor.fetchall()
+        conn.close()
+        return [dict(row) for row in rows]
+    except sqlite3.OperationalError:
+        conn.close()
+        return []  # Table doesn't exist yet
+
+
+def get_device_configs():
+    """Get all device configs from local database."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    try:
+        cursor = conn.execute("""
+            SELECT device_id, report_interval_ms, heartbeat_interval_ms,
+                   geolocation_on_boot, wifi_channels,
+                   rssi_immediate_threshold, rssi_near_threshold, rssi_far_threshold,
+                   dwell_short_threshold, dwell_medium_threshold, dwell_long_threshold,
+                   config_version, updated_at
+            FROM device_configs
+        """)
+        rows = cursor.fetchall()
+        conn.close()
+        return [dict(row) for row in rows]
+    except sqlite3.OperationalError:
+        conn.close()
+        return []  # Table doesn't exist yet
+
+
+def sync_device_configs_to_supabase(configs):
+    """Upsert device configs to Supabase."""
+    if not configs:
+        return True
+
+    supabase_rows = []
+    for c in configs:
+        supabase_rows.append({
+            "device_id": c["device_id"],
+            "report_interval_ms": c.get("report_interval_ms", 300000),
+            "heartbeat_interval_ms": c.get("heartbeat_interval_ms", 86400000),
+            "geolocation_on_boot": bool(c.get("geolocation_on_boot", 1)),
+            "wifi_channels": c.get("wifi_channels", "1,6,11"),
+            "rssi_immediate_threshold": c.get("rssi_immediate_threshold", -50),
+            "rssi_near_threshold": c.get("rssi_near_threshold", -65),
+            "rssi_far_threshold": c.get("rssi_far_threshold", -80),
+            "dwell_short_threshold": c.get("dwell_short_threshold", 1),
+            "dwell_medium_threshold": c.get("dwell_medium_threshold", 5),
+            "dwell_long_threshold": c.get("dwell_long_threshold", 10),
+            "config_version": c.get("config_version", 1),
+            "updated_at": c.get("updated_at")
+        })
+
+    url = f"{SUPABASE_URL}/rest/v1/nbiot_device_configs"
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json",
+        "Prefer": "resolution=merge-duplicates,return=minimal"
+    }
+
+    try:
+        response = requests.post(url, headers=headers, json=supabase_rows)
+        if response.status_code in (200, 201):
+            print(f"Synced {len(configs)} device configs to Supabase")
+            return True
+        else:
+            print(f"Supabase device_configs error: {response.status_code} - {response.text}")
+            return False
+    except Exception as e:
+        print(f"Device configs sync error: {e}")
+        return False
+
+def sync_device_ota_progress_to_supabase(progress):
+    """Upsert device OTA progress to Supabase."""
+    if not progress:
+        return True
+
+    supabase_rows = []
+    for p in progress:
+        supabase_rows.append({
+            "device_id": p["device_id"],
+            "target_version": p["target_version"],
+            "chunks_received": p["chunks_received"],
+            "total_chunks": p["total_chunks"],
+            "started_at": p["started_at"],
+            "last_chunk_at": p["last_chunk_at"],
+            "status": p["status"],
+            "error_message": p["error_message"]
+        })
+
+    url = f"{SUPABASE_URL}/rest/v1/device_ota_progress"
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json",
+        "Prefer": "resolution=merge-duplicates,return=minimal"
+    }
+
+    try:
+        response = requests.post(url, headers=headers, json=supabase_rows)
+        if response.status_code in (200, 201):
+            print(f"Synced {len(progress)} OTA progress records to Supabase")
+            return True
+        else:
+            print(f"Supabase device_ota_progress error: {response.status_code} - {response.text}")
+            return False
+    except Exception as e:
+        print(f"OTA progress sync error: {e}")
+        return False
+
 def main():
     print(f"[{datetime.now(timezone.utc).isoformat()}] Starting Supabase sync...")
 
@@ -191,6 +426,28 @@ def main():
     devices = get_devices()
     print(f"Found {len(devices)} devices to sync")
     sync_devices_to_supabase(devices)
+
+    # Sync OTA tables (v2.7)
+    firmware_versions = get_firmware_versions()
+    if firmware_versions:
+        print(f"Found {len(firmware_versions)} firmware versions to sync")
+        sync_firmware_versions_to_supabase(firmware_versions)
+
+    patches = get_ota_patches()
+    if patches:
+        print(f"Found {len(patches)} OTA patches to sync")
+        sync_ota_patches_to_supabase(patches)
+
+    progress = get_device_ota_progress()
+    if progress:
+        print(f"Found {len(progress)} OTA progress records to sync")
+        sync_device_ota_progress_to_supabase(progress)
+
+    # Sync device configs (v2.9)
+    configs = get_device_configs()
+    if configs:
+        print(f"Found {len(configs)} device configs to sync")
+        sync_device_configs_to_supabase(configs)
 
     print("Sync complete")
 
