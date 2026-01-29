@@ -34,6 +34,7 @@ Use these agents for specific tasks:
 |-----------|----------|----------|--------|
 | JBNB0001 | **v5.4** | Dev Unit 1 | Online |
 | JBNB0002 | **v5.4** | Dev Unit 2 | Online |
+| JBNB4400 | **v5.4** | Dev Unit 3 | Online |
 
 ### Isolated Test Environment Architecture
 ```
@@ -216,7 +217,7 @@ Device auto-locates on every boot and via remote `geolocate` command:
 5. Determines timezone from coordinates
 6. Updates device record in SQLite and Supabase
 
-**Google API Key:** `REDACTED_GOOGLE_KEY` (iot Geolocate - no restrictions)
+**Google API Key:** Set via `GOOGLE_MAPS_API_KEY` env var on Linode (project: iot Geolocate)
 
 **Limitations:** WiFi geolocation accuracy depends on Google's database of WiFi networks. In areas where Google hasn't mapped the local networks, or where visible networks are associated with other locations, the returned coordinates may be incorrect. Manual location entry may be needed in these cases.
 

@@ -13,6 +13,7 @@ import secrets
 import hashlib
 import base64
 import json
+import os
 import requests
 from datetime import datetime, timezone, timedelta
 from functools import wraps
@@ -23,11 +24,11 @@ from timezonefinder import TimezoneFinder
 app = Flask(__name__)
 DB_PATH = "/opt/datajam-nbiot/data.db"
 
-# Admin key for management endpoints - change this in production!
-ADMIN_KEY = "djnb-admin-2026-change-me"
+# Admin key for management endpoints - loaded from environment
+ADMIN_KEY = os.environ.get("NBIOT_ADMIN_KEY", "djnb-admin-2026-change-me")
 
 # Google Maps Geolocation API key
-GOOGLE_MAPS_API_KEY = "REDACTED_GOOGLE_KEY"
+GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY")
 
 # OTA Configuration
 OTA_BASE_DIR = Path("/opt/datajam-nbiot/ota")

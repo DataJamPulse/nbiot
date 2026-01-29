@@ -7,12 +7,16 @@ Updated for v2.9 - includes remote device configuration sync.
 
 import sqlite3
 import requests
+import os
 from datetime import datetime, timezone
 
 # Configuration
 DB_PATH = "/opt/datajam-nbiot/data.db"
-SUPABASE_URL = "https://xopbjawzrvsoeiapoawm.supabase.co"
-SUPABASE_KEY = "REDACTED_SUPABASE_KEY"
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://xopbjawzrvsoeiapoawm.supabase.co")
+SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_KEY")
+
+if not SUPABASE_KEY:
+    raise ValueError("SUPABASE_SERVICE_KEY environment variable is required")
 
 def parse_timestamp(ts):
     """Convert timestamp to ISO format for Supabase."""
