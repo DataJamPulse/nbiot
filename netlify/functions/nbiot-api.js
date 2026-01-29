@@ -1,6 +1,7 @@
 /**
- * NB-IoT Device Management API v1.3.0
+ * NB-IoT Device Management API v1.4.0
  * Standalone admin portal for NB-IoT JamBox fleet management.
+ * v1.4.0: Added BLE-based device composition percentages (Apple vs Other).
  * v1.3.0: Added remote command support (send_now, reboot, geolocate).
  * v1.2.0: Added BLE device counting fields for accurate OS detection.
  *
@@ -324,6 +325,20 @@ exports.handler = async (event) => {
       const bleAndroid = (todayStats || []).reduce((sum, r) => sum + (r.ble_android || 0), 0);
       const bleOther = (todayStats || []).reduce((sum, r) => sum + (r.ble_other || 0), 0);
 
+      // Calculate device composition percentages from BLE sample
+      // BLE gives us accurate OS detection via manufacturer IDs
+      // We apply this ratio to WiFi unique counts for estimated breakdown
+      let bleApplePct = 0;
+      let bleOtherPct = 0;
+      if (bleUnique > 0) {
+        bleApplePct = Math.round((bleApple / bleUnique) * 100);
+        bleOtherPct = 100 - bleApplePct; // Android + Other combined
+      }
+
+      // Estimated device breakdown: apply BLE percentages to WiFi unique count
+      const estimatedApple = bleUnique > 0 ? Math.round(totalUnique * bleApplePct / 100) : 0;
+      const estimatedOther = bleUnique > 0 ? totalUnique - estimatedApple : 0;
+
       return {
         statusCode: 200,
         headers,
@@ -356,7 +371,13 @@ exports.handler = async (event) => {
             ble_unique: bleUnique,
             ble_apple: bleApple,
             ble_android: bleAndroid,
-            ble_other: bleOther
+            ble_other: bleOther,
+            // Device composition from BLE sampling
+            ble_apple_pct: bleApplePct,
+            ble_other_pct: bleOtherPct,
+            // Estimated breakdown applied to WiFi counts
+            estimated_apple: estimatedApple,
+            estimated_other: estimatedOther
           },
           devices: formatted.map(d => ({
             device_id: d.device_id,
