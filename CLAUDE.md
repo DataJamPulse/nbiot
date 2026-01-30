@@ -25,9 +25,9 @@ Use these agents for specific tasks:
 
 ---
 
-## Current Status (2026-01-29)
+## Current Status (2026-01-30)
 
-**STATUS: PRODUCTION READY** - v5.4 firmware with remote device configuration!
+**STATUS: PRODUCTION READY** - v5.4 firmware with two-phase provisioning workflow!
 
 ### Active Devices
 | Device ID | Firmware | Location | Status |
@@ -931,12 +931,14 @@ python3 test_http_post.py
 
 1. **CID 0 is the only PDP context you should use on SIM7028 NB-IoT**
 2. **`AT+NETOPEN` is mandatory** — registration ≠ data connectivity
-3. **Band locking helps speed**, not correctness
-4. **Do NOT use `AT+CGACT=1,1`** — causes "duplicate APN" errors
-5. If `AT+IPADDR` fails, the network is not open
-6. **HTTP POST over raw TCP works** - build the request manually, send via `AT+CIPSEND`
+3. **`AT+CGDCONT=0,"IP","hologram"` is CRITICAL** — must configure APN before NETOPEN or you won't get an IP
+4. **Band locking helps speed**, not correctness
+5. **Do NOT use `AT+CGACT=1,1`** — causes "duplicate APN" errors
+6. **`AT+IPADDR` may return empty** — extract IP from `AT+CGDCONT?` response as fallback (shows IP in 4th field)
+7. **HTTP POST over raw TCP works** - build the request manually, send via `AT+CIPSEND`
+8. **Two-phase provisioning required** — factory-fresh devices need cellular provisioning before production firmware
 
-> *SIM7028 NB-IoT does not give you IP just because you are registered. You must explicitly open the data plane.*
+> *SIM7028 NB-IoT does not give you IP just because you are registered. You must explicitly configure the APN and open the data plane.*
 
 ---
 
@@ -987,7 +989,8 @@ python3 test_http_post.py
 ├── platformio.ini               # PlatformIO config
 ├── .gitignore                   # Excludes tokens, configs, credentials
 ├── src/
-│   ├── main.cpp                 # Main firmware source (v5.3)
+│   ├── main.cpp                 # Production firmware source (v5.4)
+│   ├── provisioning_main.cpp    # Cellular provisioning firmware (one-time use)
 │   └── device_config.h          # Device-specific config (auto-generated, gitignored)
 ├── scripts/
 │   ├── NBJBTOOL.sh              # Device provisioning tool
@@ -1077,10 +1080,60 @@ cd "/Users/jav/Desktop/DATAJAM/SynologyDrive/Development/Claude_Projects/IoTnAto
 | 6 | View Registered Devices - List all devices from backend |
 | 7 | View Current Config - Show current device_config.h |
 | 8 | Monitor Serial Output - Watch device logs |
+| 9 | **Flash Provisioning Firmware** - For factory-fresh devices (cellular bring-up) |
 
-### Production Workflow (Portal-First)
+### Two-Phase Manufacturing Workflow (REQUIRED for new devices)
 
-**This is the recommended workflow for production:**
+**Factory-fresh DTU units require two firmware flashes:**
+
+```
+Phase 1: Cellular Provisioning (one-time)
+┌─────────────────────────────────────────────────────────────┐
+│ 1. Connect factory-fresh device                             │
+│ 2. Run: ./scripts/NBJBTOOL.sh → Option 9                    │
+│ 3. Watch LED:                                               │
+│    - PURPLE = Booting                                       │
+│    - RED slow blink = Searching for network (up to 5 min)   │
+│    - GREEN solid = SUCCESS ✓                                │
+│    - RED fast blink = FAILURE (check serial output)         │
+│ 4. NVS flag "cellular_ok" stored on success                 │
+└─────────────────────────────────────────────────────────────┘
+                            ↓
+Phase 2: Production Firmware (with credentials)
+┌─────────────────────────────────────────────────────────────┐
+│ 1. Run: ./scripts/NBJBTOOL.sh → Option 1                    │
+│ 2. Enter device ID (e.g., JBNB0003)                         │
+│ 3. Tool fetches token, builds, flashes                      │
+│ 4. Device boots, checks NVS flag, starts counting           │
+│ 5. LED turns GREEN = operational                            │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Why two phases?**
+- Factory-fresh SIM7028 modems sometimes fail to register when production firmware initializes the modem
+- Provisioning firmware runs a deterministic 12-step AT command sequence to properly configure the modem
+- The critical step is `AT+CGDCONT=0,"IP","hologram"` which configures the APN before opening the IP stack
+- Once cellular is proven working, the NVS flag persists across firmware flashes
+
+**Provisioning Firmware AT Sequence:**
+1. `AT` - Test modem alive
+2. `ATE0` - Disable echo
+3. `AT+CPIN?` - Verify SIM ready
+4. `AT+QCBAND=0,2,4,12,13,66` - Lock to US NB-IoT bands
+5. `AT+CFUN=1,1` - Full functionality + reset
+6. Wait 5 seconds for modem reset
+7. `AT+CEREG?` - Poll until registered (stat=1 or 5)
+8. `AT+NETCLOSE` - Clean existing state
+9. **`AT+CGDCONT=0,"IP","hologram"`** - Configure APN (CRITICAL)
+10. `AT+CGATT=1` - Attach to packet domain
+11. `AT+NETOPEN` - Open IP stack
+12. `AT+CGDCONT?` - Extract IP address (fallback if AT+IPADDR fails)
+
+**Force re-provisioning:** Hold TOP button while pressing SIDE (reset) button.
+
+### Legacy Workflow (pre-provisioned devices only)
+
+For devices that have already been provisioned (LED was GREEN from provisioning firmware):
 
 1. **Admin registers device in portal** → Device ID created in backend (e.g., JBNB0003)
 
@@ -1149,8 +1202,48 @@ If you prefer manual steps:
 | File | Purpose |
 |------|---------|
 | `src/device_config.h` | Device-specific config (auto-generated, gitignored) |
-| `src/main.cpp` | Main firmware (includes device_config.h) |
+| `src/main.cpp` | Production firmware (includes device_config.h) |
+| `src/provisioning_main.cpp` | Cellular provisioning firmware (standalone, no config needed) |
 | `provisioning.log` | Log of provisioned devices (no tokens) |
+
+### PlatformIO Build Environments
+
+| Environment | Command | Purpose |
+|-------------|---------|---------|
+| `m5stack-atoms3` | `pio run -e m5stack-atoms3` | Production firmware (WiFi probes, BLE, reporting) |
+| `provisioning` | `pio run -e provisioning` | Cellular provisioning only (no WiFi/BLE/auth) |
+
+### Provisioning Firmware Details
+
+**File:** `src/provisioning_main.cpp`
+**Size:** ~350 KB Flash, ~21 KB RAM (much smaller than production)
+
+**What it does:**
+- Runs deterministic AT command sequence to bring up NB-IoT modem
+- Configures APN (`AT+CGDCONT=0,"IP","hologram"`)
+- Verifies IP address obtained (extracts from CGDCONT response)
+- Stores NVS flag `cellular_ok=1` on success
+- Provides LED feedback and serial diagnostics
+
+**What it does NOT include:**
+- No WiFi scanning or promiscuous mode
+- No BLE
+- No backend authentication or tokens
+- No OTA
+- No probe counting
+- No device_config.h dependency
+
+**LED States:**
+| Color | Meaning |
+|-------|---------|
+| PURPLE | Booting/initializing |
+| RED slow blink | Searching for network |
+| GREEN solid | Success - provisioning complete |
+| RED fast blink | Failure - check serial output |
+
+**Button Actions:**
+- **TOP button held on boot:** Force re-provisioning (clears NVS flag)
+- **TOP button press (after failure):** Retry provisioning sequence
 
 ### Device ID Format
 
@@ -1278,4 +1371,4 @@ Integrating NB-IoT device management into DataJam Reports Portal.
 
 ---
 
-*Last Updated: 2026-01-29 (Firmware v5.4, Backend v2.9, API v1.6.0 with remote device configuration)*
+*Last Updated: 2026-01-30 (Firmware v5.4, Backend v2.9, API v1.6.0, Two-Phase Provisioning Workflow)*

@@ -837,6 +837,7 @@ show_menu() {
     echo "  6. View Registered Devices"
     echo "  7. View Current Config"
     echo "  8. Monitor Serial Output"
+    echo "  9. Flash Provisioning Firmware (Factory Fresh Devices)"
     echo ""
     echo "  0. Exit"
     echo ""
@@ -849,6 +850,15 @@ do_flash_preregistered() {
     echo ""
     echo "This flashes a device that was already created in the portal/backend."
     echo "Just enter the Device ID - the tool will fetch a fresh token automatically."
+    echo ""
+    print_warning "NOTE: Device must be provisioned first (GREEN LED from provisioning firmware)."
+    print_info "If device is factory-fresh, run option 9 first."
+    echo ""
+    read -p "Continue? [Y/n]: " prereq_confirm
+    if [[ "$prereq_confirm" == "n" || "$prereq_confirm" == "N" ]]; then
+        print_info "Cancelled - run option 9 to flash provisioning firmware first."
+        return 0
+    fi
     echo ""
 
     # Get device ID
@@ -1242,6 +1252,53 @@ do_monitor() {
     "$PIO_CMD" device monitor --port "$SELECTED_PORT" --baud 115200
 }
 
+# Flash provisioning firmware for factory-fresh devices
+do_flash_provisioning() {
+    echo ""
+    print_step "Flash Provisioning Firmware (Factory Fresh Devices)"
+    echo ""
+    echo "This flashes cellular provisioning firmware for factory-fresh devices."
+    echo "The device will attempt to register on the NB-IoT network."
+    echo ""
+    print_info "Wait for GREEN LED = success, RED fast blink = failure"
+    echo ""
+
+    read -p "Proceed with flashing provisioning firmware? [Y/n]: " confirm
+    if [[ "$confirm" == "n" || "$confirm" == "N" ]]; then
+        print_info "Cancelled"
+        return 0
+    fi
+
+    # Select serial port first
+    print_step "Detecting serial port..."
+    if ! select_serial_port; then
+        return 1
+    fi
+    local port="$SELECTED_PORT"
+
+    # Build and flash provisioning firmware
+    print_step "Building and flashing provisioning firmware..."
+    cd "$PROJECT_DIR"
+
+    if "$PIO_CMD" run -e provisioning -t upload --upload-port "$port" 2>&1; then
+        echo ""
+        print_success "Provisioning firmware flashed!"
+        echo ""
+        echo "Watch the LED:"
+        echo "  - PURPLE: Booting"
+        echo "  - RED slow blink: Searching for network (wait up to 5 minutes)"
+        echo "  - GREEN solid: SUCCESS - ready for production firmware"
+        echo "  - RED fast blink: FAILURE - check antenna/SIM, see serial output"
+        echo ""
+        print_info "Once LED is GREEN, run option 1 to flash production firmware."
+        echo ""
+        return 0
+    else
+        print_error "Provisioning firmware flash failed"
+        return 1
+    fi
+}
+
 # =============================================================================
 # Main
 # =============================================================================
@@ -1304,6 +1361,9 @@ main() {
                 ;;
             8)
                 do_monitor
+                ;;
+            9)
+                do_flash_provisioning
                 ;;
             0|q|Q)
                 echo ""
