@@ -39,7 +39,6 @@
 #include <Update.h>
 #include <FastLED.h>
 #include <NimBLEDevice.h>
-#include <Preferences.h>
 #include <set>
 #include <map>
 #include <time.h>
@@ -77,7 +76,7 @@ static DeviceType classifyBleDevice(uint16_t manufacturerId) {
 #include "device_config.h"
 
 // Firmware version
-static const char* FIRMWARE_VERSION = "4.5";
+static const char* FIRMWARE_VERSION = "4.6";
 
 // SSL Configuration (disabled for now - AT+CCHOPEN failing)
 #define USE_SSL false
@@ -1417,8 +1416,8 @@ static bool sendHeartbeat() {
                 Serial.println("[TIME DEBUG] Found server_time key");
                 timeStart += 15;  // Skip past "server_time":"
                 char* timeEnd = strchr(timeStart, '"');
-                if (timeEnd && (timeEnd - timeStart) < 30) {
-                    char serverTime[32] = {0};
+                if (timeEnd && (timeEnd - timeStart) < 40) {
+                    char serverTime[40] = {0};
                     memcpy(serverTime, timeStart, timeEnd - timeStart);
 
                     // Parse ISO 8601: "2026-01-26T12:30:00+00:00" or "2026-01-26T12:30:00.123456+00:00"
@@ -2096,56 +2095,9 @@ static void checkResetButton() {
 // =============================================================================
 
 void setup() {
-    // =========================================================================
-    // PROVISIONING CHECK - Must happen FIRST before any other initialization
-    // =========================================================================
-    // Check if device has been provisioned (cellular connectivity verified).
-    // The provisioning firmware sets "cellular_ok" = 1 in NVS after successful
-    // network registration. If this flag is not set, the device was never
-    // provisioned and should not attempt to run production firmware.
-    // =========================================================================
-    {
-        Preferences prefs;
-        prefs.begin("jambox", true);  // Read-only mode
-        uint8_t cellularOk = prefs.getUChar("cellular_ok", 0);
-        prefs.end();
-
-        if (cellularOk != 1) {
-            // Device not provisioned - halt boot with error
-            // Initialize minimal LED to show error state
-            CRGB errorLed[1];
-            FastLED.addLeds<WS2812, LED_PIN, GRB>(errorLed, 1);
-            FastLED.setBrightness(50);
-            errorLed[0] = CRGB::Red;
-            FastLED.show();
-
-            // Initialize serial for error message
-            Serial.begin(115200);
-            delay(2000);  // Wait for USB CDC
-
-            Serial.println();
-            Serial.println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-            Serial.println("[BOOT] ERROR: Device not provisioned.");
-            Serial.println("[BOOT] Flash provisioning firmware first.");
-            Serial.println("[BOOT] Run: pio run -e provisioning -t upload");
-            Serial.println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-            Serial.println();
-
-            // Halt boot - infinite loop
-            while (true) {
-                delay(1000);
-            }
-        }
-
-        // Provisioning flag OK - continue normal boot
-        Serial.begin(115200);
-        delay(100);  // Brief delay
-        Serial.println("[BOOT] Provisioning flag OK");
-    }
-
-    // Initialize USB Serial (full initialization)
-    // Note: Serial already begun above, just need the delay for USB CDC
-    delay(1900);  // Remaining delay for USB CDC (total ~2000ms)
+    // Initialize USB Serial
+    Serial.begin(115200);
+    delay(2000);  // Wait for USB CDC
 
     Serial.println();
     Serial.println("========================================");

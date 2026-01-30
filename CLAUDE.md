@@ -32,9 +32,11 @@ Use these agents for specific tasks:
 ### Active Devices
 | Device ID | Firmware | Location | Status |
 |-----------|----------|----------|--------|
-| JBNB0001 | **v5.4** | Dev Unit 1 | Online |
-| JBNB0002 | **v5.4** | Dev Unit 2 | Online |
-| JBNB4400 | **v5.4** | Dev Unit 3 | Online |
+| JBNB0001 | v5.3 | Dev Unit 1 | Online |
+| JBNB0002 | v5.3 | Dev Unit 2 | Online |
+| JBNB0003 | v4.6 | Dev Unit 3 | Online |
+| JBNB0004 | v4.6 | Dev Unit 4 | Online |
+| JBNB4400 | v4.6 | Dev Unit 5 | Online |
 
 ### Isolated Test Environment Architecture
 ```
@@ -287,6 +289,8 @@ NB-IoT has built-in network-layer encryption. TLS handshakes are unreliable over
 ### Parked for Later
 - **Hologram API integration** - Data usage per device, last cellular connection time. Revisit at 20+ devices or when billing clients.
 - **BLE Beacon advertising** - Proximity marketing feature. JamBox broadcasts beacon, client apps detect and trigger notifications. Hardware capable, needs firmware + client SDK.
+- **Report interval jitter** - Devices with similar boot times report within seconds of each other. At scale (20+ devices), add random 0-60s offset to spread load. Not needed for current 4-device fleet.
+- **OTA updates in UI** - Add OTA management to dashboard settings panel. Select firmware version, target devices, trigger rollout. Currently OTA is triggered via backend API commands.
 
 ### TODO
 - [x] Polish Fleet Command UI based on real data - DONE (Device Health section added)

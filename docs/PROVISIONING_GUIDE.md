@@ -9,12 +9,29 @@ This guide covers everything needed to provision NB-IoT JamBox devices (JBNB ser
 **What is provisioning?**
 Provisioning flashes unique firmware onto each JamBox device with its own secure authentication token. Each device gets a unique identity (e.g., JBNB0002) that's registered in our backend.
 
-**Workflow:**
-1. Device is registered in the portal/backend (creates device ID + token)
-2. Technician runs NBJBTOOL.sh on their laptop
-3. Enters the device ID (e.g., JBNB0002)
-4. Tool fetches a fresh token, builds firmware, and flashes the device
-5. Device boots up and starts counting
+**Two-Phase Workflow (Factory-Fresh Devices):**
+
+Factory-fresh devices require a two-phase provisioning process:
+
+| Phase | Firmware | Purpose | LED Result |
+|-------|----------|---------|------------|
+| 1 | Provisioning | Initializes cellular modem, registers on network | GREEN = success |
+| 2 | Production | Full firmware with probe counting | GREEN = online |
+
+**Steps:**
+1. Connect factory-fresh device via USB-C
+2. Run `./scripts/NBJBTOOL.sh`
+3. Select option **9** (Flash Provisioning Firmware)
+4. Wait for **solid GREEN LED** (1-2 minutes for network registration)
+5. Select option **1** (Flash Pre-Registered Device)
+6. Enter the device ID (e.g., JBNB0004)
+7. Device boots and starts counting
+
+**Why two phases?**
+The SIM7028 NB-IoT modem on factory-fresh units needs explicit initialization before it can connect. The provisioning firmware runs a deterministic AT command sequence to bring up the cellular stack, then stores a success flag in NVS. The production firmware checks this flag on boot.
+
+**Re-provisioning existing devices:**
+Devices that have been provisioned before can skip Phase 1. Just use option 1 directly.
 
 ---
 
@@ -218,6 +235,7 @@ cd "/c/Users/YourName/Documents/NB-IoT JamBox"
 | 6 | View Registered Devices | List all devices in backend |
 | 7 | View Current Config | Show current device_config.h |
 | 8 | Monitor Serial Output | Watch device serial output |
+| 9 | Flash Provisioning Firmware | **Factory-fresh devices** - Phase 1 cellular init |
 
 ---
 
@@ -298,16 +316,34 @@ python3 get-platformio.py
 ## Quick Reference Card
 
 ```
-PROVISIONING CHECKLIST
-======================
+FACTORY-FRESH DEVICE (Two-Phase)
+================================
 [ ] Device connected via USB-C
-[ ] Device registered in portal (have the JBNB#### number)
+[ ] Run: ./scripts/NBJBTOOL.sh
+[ ] Select option 9 (Provisioning Firmware)
+[ ] Wait for GREEN LED (1-2 min)
+[ ] Select option 1 (Flash Pre-Registered)
+[ ] Enter device ID (e.g., JBNB0004)
+[ ] Confirm flash
+[ ] Wait for "flashed successfully"
+[ ] Verify LED turns GREEN
+
+PREVIOUSLY PROVISIONED DEVICE
+=============================
+[ ] Device connected via USB-C
 [ ] Run: ./scripts/NBJBTOOL.sh
 [ ] Select option 1
 [ ] Enter device ID
 [ ] Confirm flash
-[ ] Wait for "flashed successfully"
 [ ] Verify LED turns GREEN
+
+LED STATUS
+==========
+PURPLE      = Booting
+RED (slow)  = Searching for network
+RED (fast)  = Error - retry or check SIM
+GREEN       = Success / Online
+CYAN        = Transmitting data
 
 TROUBLESHOOTING
 ===============
@@ -315,7 +351,7 @@ No serial port? -> Try different cable/port
 Device not found? -> Check portal registration
 Build failed? -> Reinstall PlatformIO
 Flash failed? -> Close other serial apps
-LED stays red? -> Wait or move near window
+LED stays red? -> Wait 2 min or move near window
 ```
 
 ---
@@ -333,4 +369,4 @@ If you encounter issues not covered here:
 
 ---
 
-*Last updated: 2026-01-26*
+*Last updated: 2026-01-30*
