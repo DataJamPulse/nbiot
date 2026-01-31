@@ -205,6 +205,7 @@
         .stat-card.online .stat-value { color: var(--chart-teal); }
         .stat-card.warning .stat-value { color: var(--chart-yellow); }
         .stat-card.offline .stat-value { color: var(--dj-orange); }
+        .stat-card.anomaly .stat-value { color: var(--dj-pink); }
 
         /* Devices List */
         .devices-panel {
@@ -540,6 +541,71 @@
         .health-badge.offline {
             background: rgba(233, 75, 82, 0.15);
             color: var(--dj-orange);
+        }
+
+        .health-badge.anomaly {
+            background: rgba(230, 47, 110, 0.15);
+            color: var(--dj-pink);
+        }
+
+        /* Anomaly Alert Banner */
+        .anomaly-banner {
+            background: linear-gradient(135deg, rgba(230, 47, 110, 0.15), rgba(233, 75, 82, 0.1));
+            border: 1px solid rgba(230, 47, 110, 0.3);
+            border-radius: var(--radius-sm);
+            padding: 12px 16px;
+            margin-top: 12px;
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+        }
+
+        .anomaly-banner-icon {
+            width: 20px;
+            height: 20px;
+            color: var(--dj-pink);
+            flex-shrink: 0;
+        }
+
+        .anomaly-banner-content {
+            flex: 1;
+        }
+
+        .anomaly-banner-title {
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--dj-pink);
+            margin-bottom: 4px;
+        }
+
+        .anomaly-banner-reason {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .anomaly-banner-time {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        .clear-anomaly-btn {
+            padding: 6px 12px;
+            font-family: inherit;
+            font-size: 11px;
+            font-weight: 500;
+            color: var(--text-primary);
+            background: var(--bg-elevated);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            white-space: nowrap;
+        }
+
+        .clear-anomaly-btn:hover {
+            background: var(--bg-surface);
+            border-color: rgba(255,255,255,0.2);
         }
 
         .health-metrics {
@@ -945,6 +1011,10 @@
                         <div class="stat-value" id="statOffline">—</div>
                         <div class="stat-label">Offline</div>
                     </div>
+                    <div class="stat-card anomaly" id="statAnomalyCard" style="display: none;">
+                        <div class="stat-value" id="statAnomaly">0</div>
+                        <div class="stat-label">Anomaly</div>
+                    </div>
                 </div>
 
                 <div class="devices-panel">
@@ -969,7 +1039,7 @@
         </div>
 
         <footer class="footer">
-            Powered by DataJam • API v1.6.0 • Updates every 2 minutes
+            Powered by DataJam • API v1.7.0 • Updates every 2 minutes
         </footer>
     </div>
 
@@ -1054,11 +1124,16 @@
             }
         }
 
-        function updateStats(stats) {
+        function updateStats(stats, devices) {
             document.getElementById('statTotal').textContent = stats.total || 0;
             document.getElementById('statOnline').textContent = stats.online || 0;
             document.getElementById('statWarning').textContent = stats.warning || 0;
             document.getElementById('statOffline').textContent = stats.offline || 0;
+
+            // Count anomalous devices
+            const anomalyCount = (devices || []).filter(d => d.anomalous).length;
+            document.getElementById('statAnomaly').textContent = anomalyCount;
+            document.getElementById('statAnomalyCard').style.display = anomalyCount > 0 ? 'block' : 'none';
         }
 
         function getSignalQuality(dbm) {
@@ -1089,9 +1164,10 @@
             grid.innerHTML = jbnbDevices.map(d => {
                 const signal = getSignalQuality(d.last_signal_dbm);
                 const signalColor = getSignalColor(d.last_signal_dbm);
+                const isAnomalous = d.anomalous;
 
                 return `
-                    <div class="health-card">
+                    <div class="health-card" ${isAnomalous ? 'style="border-color: rgba(230, 47, 110, 0.4);"' : ''}>
                         <div class="health-card-header">
                             <div class="health-device-info">
                                 <div class="health-status-dot ${d.connection_status}"></div>
@@ -1100,7 +1176,10 @@
                                     <div class="health-device-id">${d.device_id}</div>
                                 </div>
                             </div>
-                            <div class="health-badge ${d.connection_status}">${d.connection_status}</div>
+                            <div style="display: flex; gap: 6px; align-items: center;">
+                                ${isAnomalous ? '<div class="health-badge anomaly">ANOMALY</div>' : ''}
+                                <div class="health-badge ${d.connection_status}">${d.connection_status}</div>
+                            </div>
                         </div>
                         <div class="health-metrics">
                             <div class="health-metric">
@@ -1123,6 +1202,19 @@
                                 <div class="health-metric-value ${signal.class}">${signal.label}</div>
                             </div>
                         </div>
+                        ${isAnomalous ? `
+                            <div class="anomaly-banner">
+                                <svg class="anomaly-banner-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                                    <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                                </svg>
+                                <div class="anomaly-banner-content">
+                                    <div class="anomaly-banner-title">Unusual Activity Detected</div>
+                                    <div class="anomaly-banner-reason">${d.anomaly_reason || 'Unknown reason'}</div>
+                                    ${d.anomaly_detected_at ? `<div class="anomaly-banner-time">Detected: ${new Date(d.anomaly_detected_at).toLocaleString()}</div>` : ''}
+                                </div>
+                            </div>
+                        ` : ''}
                         ${d.location_name ? `
                             <div class="health-location">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1299,6 +1391,21 @@
                                             Reboot
                                         </button>
                                     </div>
+
+                                    ${device.anomalous ? `
+                                    <div class="anomaly-banner" style="margin: 16px 0;">
+                                        <svg class="anomaly-banner-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                                            <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                                        </svg>
+                                        <div class="anomaly-banner-content">
+                                            <div class="anomaly-banner-title">Unusual Activity Detected</div>
+                                            <div class="anomaly-banner-reason">${device.anomaly_reason || 'Unknown reason'}</div>
+                                            ${device.anomaly_detected_at ? `<div class="anomaly-banner-time">Detected: ${new Date(device.anomaly_detected_at).toLocaleString()}</div>` : ''}
+                                        </div>
+                                        <button class="clear-anomaly-btn" onclick="clearAnomaly('${device.device_id}', this)">Clear</button>
+                                    </div>
+                                    ` : ''}
 
                                     <div style="padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.06); font-size: 12px; color: var(--text-muted);">
                                         <div>Device ID: ${device.device_id}</div>
@@ -1515,6 +1622,34 @@
             document.getElementById('modal').innerHTML = '';
         }
 
+        async function clearAnomaly(deviceId, btn) {
+            const originalText = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = 'Clearing...';
+
+            try {
+                const res = await fetch(`${API_BASE}/device/${deviceId}/clear-anomaly`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                if (res.ok) {
+                    btn.textContent = 'Cleared!';
+                    setTimeout(() => {
+                        closeModal();
+                        loadFleet();
+                    }, 500);
+                } else {
+                    const data = await res.json();
+                    throw new Error(data.error || 'Failed to clear');
+                }
+            } catch (err) {
+                alert(`Failed: ${err.message}`);
+                btn.disabled = false;
+                btn.textContent = originalText;
+            }
+        }
+
         async function sendCommand(deviceId, command, btn) {
             const originalText = btn.innerHTML;
             btn.classList.add('loading');
@@ -1552,11 +1687,12 @@
             try {
                 const res = await fetch(`${API_BASE}/devices`);
                 const data = await res.json();
+                const devices = data.devices || [];
 
-                updateStats(data.stats || {});
-                updateDevicesList(data.devices || []);
-                updateMap(data.devices || []);
-                updateHealthGrid(data.devices || []);
+                updateStats(data.stats || {}, devices);
+                updateDevicesList(devices);
+                updateMap(devices);
+                updateHealthGrid(devices);
 
             } catch (err) {
                 console.error('Failed to load fleet:', err);

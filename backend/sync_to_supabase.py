@@ -2,7 +2,7 @@
 """
 Sync readings, devices, OTA data, and device configs from local SQLite to Supabase.
 Runs as a cron job every 5 minutes.
-Updated for v2.9 - includes remote device configuration sync.
+Updated for v2.11 - includes anomaly detection fields.
 """
 
 import sqlite3
@@ -133,7 +133,8 @@ def get_devices():
     cursor = conn.execute("""
         SELECT device_id, project_name, location_name, timezone,
                firmware_version, status, registered_at, last_seen_at,
-               last_signal_dbm, latitude, longitude, device_pin
+               last_signal_dbm, latitude, longitude, device_pin,
+               anomalous, anomaly_reason, anomaly_detected_at
         FROM devices
     """)
     rows = cursor.fetchall()
@@ -160,7 +161,11 @@ def sync_devices_to_supabase(devices):
             "last_signal_dbm": d["last_signal_dbm"],
             "latitude": d["latitude"],
             "longitude": d["longitude"],
-            "device_pin": d.get("device_pin")
+            "device_pin": d.get("device_pin"),
+            # Anomaly detection fields (v2.11)
+            "anomalous": bool(d.get("anomalous", 0)),
+            "anomaly_reason": d.get("anomaly_reason"),
+            "anomaly_detected_at": d.get("anomaly_detected_at")
         })
 
     url = f"{SUPABASE_URL}/rest/v1/nbiot_devices"

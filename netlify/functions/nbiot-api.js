@@ -1,6 +1,7 @@
 /**
- * NB-IoT Device Management API v1.6.0
+ * NB-IoT Device Management API v1.7.0
  * Standalone admin portal for NB-IoT JamBox fleet management.
+ * v1.7.0: Added anomaly detection display and clear-anomaly endpoint.
  * v1.6.0: Added remote device configuration (RSSI/dwell thresholds, report intervals).
  * v1.5.0: Added data quality/auditability fields (overflow, cache_depth, send_failures, age).
  * v1.4.0: Added BLE-based device composition percentages (Apple vs Other).
@@ -18,6 +19,7 @@
  * - POST /nbiot-api/device/register Register new device (proxy to Linode)
  * - POST /nbiot-api/device/:id/regenerate  Regenerate token (proxy to Linode)
  * - POST /nbiot-api/device/:id/command     Send command to device (send_now, reboot, geolocate)
+ * - POST /nbiot-api/device/:id/clear-anomaly  Clear anomaly flag (proxy to Linode)
  */
 
 const https = require('https');
@@ -716,6 +718,36 @@ exports.handler = async (event) => {
     }
 
     // =====================
+    // POST /device/:id/clear-anomaly - Clear anomaly flag
+    // =====================
+    if (method === 'POST' && segments[0] === 'device' && segments[1] && segments[2] === 'clear-anomaly') {
+      if (!NBIOT_ADMIN_KEY) {
+        return { statusCode: 500, headers, body: JSON.stringify({ error: 'Linode admin key not configured' }) };
+      }
+
+      const deviceId = segments[1].toUpperCase();
+      const response = await linodeRequest('POST', `/api/device/${deviceId}/clear-anomaly`);
+
+      if (response.statusCode === 200) {
+        return {
+          statusCode: 200,
+          headers,
+          body: JSON.stringify({
+            success: true,
+            device_id: deviceId,
+            message: response.data?.message || 'Anomaly flag cleared'
+          })
+        };
+      } else {
+        return {
+          statusCode: response.statusCode,
+          headers,
+          body: JSON.stringify({ error: response.data?.error || 'Failed to clear anomaly' })
+        };
+      }
+    }
+
+    // =====================
     // Unknown route
     // =====================
     return {
@@ -723,7 +755,7 @@ exports.handler = async (event) => {
       headers,
       body: JSON.stringify({
         error: 'Not found',
-        available: ['GET /devices', 'GET /device/:id', 'GET /device/:id/config', 'PUT /device/:id/config', 'GET /readings', 'GET /stats', 'GET /hourly', 'POST /device/register', 'POST /device/:id/regenerate', 'POST /device/:id/command']
+        available: ['GET /devices', 'GET /device/:id', 'GET /device/:id/config', 'PUT /device/:id/config', 'GET /readings', 'GET /stats', 'GET /hourly', 'POST /device/register', 'POST /device/:id/regenerate', 'POST /device/:id/command', 'POST /device/:id/clear-anomaly']
       })
     };
 

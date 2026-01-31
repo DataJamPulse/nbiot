@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-DataJam NB-IoT Backend Receiver v2.9
+DataJam NB-IoT Backend Receiver v2.11
 Production-ready with device authentication, management, device type classification,
 WiFi-based geolocation with automatic timezone detection, extended RSSI metrics,
 enhanced heartbeat tracking with uptime, BLE device counting, OTA update system,
-data quality/auditability features, and remote device configuration.
-v2.9: Remote configuration of RSSI thresholds, dwell time buckets, and report intervals.
+data quality/auditability features, remote device configuration, and anomaly detection.
+v2.11: Soft anomaly detection (non-blocking) replaces hard rate limiting on readings.
 """
 
 import sqlite3
@@ -14,14 +14,170 @@ import hashlib
 import base64
 import json
 import os
+import time
 import requests
 from datetime import datetime, timezone, timedelta
+from collections import defaultdict
 from functools import wraps
 from pathlib import Path
 from flask import Flask, request, jsonify, g
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from timezonefinder import TimezoneFinder
 
 app = Flask(__name__)
+
+# ============== Rate Limiting ==============
+# Limits abuse from stolen device tokens
+# Uses in-memory storage (resets on restart - fine for this scale)
+
+def get_device_id_for_limit():
+    """Extract device ID from request for rate limiting per-device."""
+    # Try JSON body first
+    data = request.get_json(silent=True) or {}
+    device_id = data.get('d') or data.get('device_id')
+    # Fall back to query params
+    if not device_id:
+        device_id = request.args.get('d') or request.args.get('device_id')
+    # Fall back to IP if no device ID
+    return device_id or get_remote_address()
+
+limiter = Limiter(
+    app=app,
+    key_func=get_device_id_for_limit,
+    default_limits=["200 per hour"],  # Default for unlabeled endpoints
+    storage_uri="memory://",
+    strategy="fixed-window"
+)
+
+# ============== Anomaly Detection ==============
+# Non-blocking observation of unusual device behavior
+# Flags devices but never drops data
+
+# In-memory request tracker: device_id -> [timestamp, timestamp, ...]
+# Resets on server restart (fine for alerting purposes)
+_request_tracker = defaultdict(list)
+
+# Thresholds (tune based on real-world observation)
+ANOMALY_BURST_THRESHOLD = 50      # Requests in 60 seconds (normal max ~12 for cache dump spread)
+ANOMALY_SUSTAINED_THRESHOLD = 30  # Requests per minute sustained
+ANOMALY_WINDOW_SECONDS = 60
+
+def check_anomaly(device_id):
+    """
+    Check if device is behaving anomalously. NON-BLOCKING.
+    Returns True if anomalous, but NEVER drops data.
+    """
+    now = time.time()
+
+    # Clean old entries and add current request
+    recent = [t for t in _request_tracker[device_id] if now - t < ANOMALY_WINDOW_SECONDS]
+    recent.append(now)
+    _request_tracker[device_id] = recent
+
+    # Check burst threshold
+    if len(recent) > ANOMALY_BURST_THRESHOLD:
+        reason = f"Burst: {len(recent)} requests in {ANOMALY_WINDOW_SECONDS}s"
+        _flag_anomaly(device_id, reason)
+        return True
+
+    return False
+
+def _flag_anomaly(device_id, reason):
+    """Flag device as anomalous in database, log alert, and send email."""
+    print(f"[ANOMALY] {device_id}: {reason}", flush=True)
+
+    now = datetime.now(timezone.utc).isoformat()
+
+    try:
+        # Update database (uses separate connection to avoid transaction issues)
+        conn = sqlite3.connect(DB_PATH)
+
+        # Check if already flagged (avoid duplicate alerts)
+        existing = conn.execute(
+            "SELECT anomalous FROM devices WHERE device_id = ?", (device_id,)
+        ).fetchone()
+
+        already_flagged = existing and existing[0] == 1
+
+        conn.execute("""
+            UPDATE devices
+            SET anomalous = 1, anomaly_reason = ?, anomaly_detected_at = ?
+            WHERE device_id = ?
+        """, (reason, now, device_id))
+        conn.commit()
+        conn.close()
+
+        # Send email alert (only if not already flagged - prevents spam)
+        if not already_flagged:
+            _send_anomaly_email(device_id, reason, now)
+
+    except Exception as e:
+        print(f"[ANOMALY] Failed to flag {device_id}: {e}", flush=True)
+
+
+def _send_anomaly_email(device_id, reason, detected_at):
+    """Send anomaly alert email via Resend."""
+    if not RESEND_API_KEY:
+        print("[ANOMALY] No RESEND_API_KEY configured, skipping email", flush=True)
+        return
+
+    try:
+        response = requests.post(
+            "https://api.resend.com/emails",
+            headers={
+                "Authorization": f"Bearer {RESEND_API_KEY}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "from": ALERT_EMAIL_FROM,
+                "to": [ALERT_EMAIL_TO],
+                "subject": f"🚨 NB-IoT Anomaly Alert: {device_id}",
+                "html": f"""
+                <h2>Anomaly Detected</h2>
+                <p><strong>Device:</strong> {device_id}</p>
+                <p><strong>Reason:</strong> {reason}</p>
+                <p><strong>Detected:</strong> {detected_at}</p>
+                <hr>
+                <p>This device is showing unusual request patterns that may indicate:</p>
+                <ul>
+                    <li>A stolen device token being abused</li>
+                    <li>A device malfunction causing rapid requests</li>
+                    <li>Network issues causing request storms</li>
+                </ul>
+                <p><strong>Action:</strong> Review device status at the admin panel or run:</p>
+                <pre>curl -H "Authorization: Bearer [ADMIN_KEY]" http://172.233.144.32:5000/api/devices</pre>
+                <p>To clear the flag after investigation:</p>
+                <pre>curl -X POST http://172.233.144.32:5000/api/device/{device_id}/clear-anomaly -H "Authorization: Bearer [ADMIN_KEY]"</pre>
+                <hr>
+                <p style="color: #666; font-size: 12px;">DataJam NB-IoT Monitoring</p>
+                """
+            },
+            timeout=10
+        )
+
+        if response.status_code in (200, 201):
+            print(f"[ANOMALY] Email alert sent for {device_id}", flush=True)
+        else:
+            print(f"[ANOMALY] Email failed: {response.status_code} - {response.text}", flush=True)
+
+    except Exception as e:
+        print(f"[ANOMALY] Email error: {e}", flush=True)
+
+def clear_anomaly(device_id):
+    """Clear anomaly flag (call from admin endpoint or manually)."""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.execute("""
+            UPDATE devices
+            SET anomalous = 0, anomaly_reason = NULL, anomaly_detected_at = NULL
+            WHERE device_id = ?
+        """, (device_id,))
+        conn.commit()
+        conn.close()
+        print(f"[ANOMALY] Cleared flag for {device_id}", flush=True)
+    except Exception as e:
+        print(f"[ANOMALY] Failed to clear {device_id}: {e}", flush=True)
 DB_PATH = "/opt/datajam-nbiot/data.db"
 
 # Admin key for management endpoints - loaded from environment
@@ -29,6 +185,11 @@ ADMIN_KEY = os.environ.get("NBIOT_ADMIN_KEY", "djnb-admin-2026-change-me")
 
 # Google Maps Geolocation API key
 GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY")
+
+# Resend API for email alerts
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
+ALERT_EMAIL_TO = os.environ.get("ALERT_EMAIL_TO", "jav@datajam.co.uk")
+ALERT_EMAIL_FROM = os.environ.get("ALERT_EMAIL_FROM", "alerts@datajamreports.com")
 
 # OTA Configuration
 OTA_BASE_DIR = Path("/opt/datajam-nbiot/ota")
@@ -221,6 +382,10 @@ def init_db():
         ("device_configs", "dwell_medium_threshold", "INTEGER DEFAULT 5"),
         ("device_configs", "dwell_long_threshold", "INTEGER DEFAULT 10"),
         ("device_configs", "config_version", "INTEGER DEFAULT 1"),
+        # Anomaly detection (v2.11)
+        ("devices", "anomalous", "INTEGER DEFAULT 0"),
+        ("devices", "anomaly_reason", "TEXT"),
+        ("devices", "anomaly_detected_at", "TEXT"),
     ]
 
     for table, column, col_type in migrations:
@@ -328,9 +493,22 @@ def calculate_crc16(data: bytes) -> int:
             crc &= 0xFFFF
     return crc
 
+# ============== Rate Limit Error Handler ==============
+
+@app.errorhandler(429)
+def ratelimit_handler(e):
+    """Handle rate limit exceeded errors."""
+    print(f"[RATE_LIMIT] Exceeded: {e.description}", flush=True)
+    return jsonify({
+        "error": "Rate limit exceeded",
+        "message": e.description,
+        "retry_after": e.get_response().headers.get("Retry-After", 60)
+    }), 429
+
 # ============== Public Endpoints ==============
 
 @app.route("/health")
+@limiter.exempt  # Health check should never be rate limited
 def health():
     """Health check - no auth required."""
     return jsonify({
@@ -342,12 +520,16 @@ def health():
 # ============== Device Endpoints (require device token) ==============
 
 @app.route("/api/reading", methods=["POST"])
+@limiter.exempt  # No hard limit - use soft anomaly detection instead
 @require_device_auth
 def receive_reading():
     """Receive a reading from an authenticated device."""
     try:
         data = request.get_json()
         device_id = g.device_id
+
+        # Soft anomaly check - flags but NEVER drops data
+        check_anomaly(device_id)
 
         # Timestamp can be ISO string or integer
         timestamp = data.get('t') if data.get('t') is not None else data.get('timestamp')
@@ -490,6 +672,7 @@ def receive_reading():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/heartbeat", methods=["POST"])
+@limiter.limit("10 per hour")  # Normal: 1/day, allow for boot storms
 @require_device_auth
 def heartbeat():
     """Device heartbeat - 'I'm alive' signal with firmware version and uptime tracking."""
@@ -553,6 +736,7 @@ def heartbeat():
 # ============== Remote Configuration ==============
 
 @app.route("/api/config/<device_id>", methods=["GET"])
+@limiter.limit("10 per hour")  # Config fetch on version change
 @require_device_auth
 def get_device_config(device_id):
     """Return device configuration for remote config pull."""
@@ -746,6 +930,7 @@ def google_geolocate(wifi_networks):
 
 
 @app.route("/api/geolocation", methods=["POST"])
+@limiter.limit("10 per hour")  # On boot + occasional geolocate command
 @require_device_auth
 def receive_geolocation():
     """Receive WiFi scan data from device and determine location/timezone."""
@@ -803,6 +988,7 @@ def receive_geolocation():
 # ============== OTA Update Endpoints ==============
 
 @app.route("/api/ota/check", methods=["POST"])
+@limiter.limit("10 per hour")  # OTA check on heartbeat
 @require_device_auth
 def ota_check():
     """
@@ -892,6 +1078,7 @@ def ota_check():
 
 
 @app.route("/api/ota/chunk", methods=["GET"])
+@limiter.limit("500 per hour")  # OTA downloads many chunks - ~400 for typical patch
 @require_device_auth
 def ota_get_chunk():
     """
@@ -963,6 +1150,7 @@ def ota_get_chunk():
 
 
 @app.route("/api/ota/complete", methods=["POST"])
+@limiter.limit("10 per hour")  # OTA completion report
 @require_device_auth
 def ota_complete():
     """
@@ -1372,6 +1560,38 @@ def update_device_location(device_id):
         print(f"[ERROR] update_device_location: {e}", flush=True)
         return jsonify({"error": str(e)}), 500
 
+@app.route("/api/device/<device_id>/clear-anomaly", methods=["POST"])
+@require_admin
+def clear_device_anomaly(device_id):
+    """Clear anomaly flag for a device (admin only)."""
+    try:
+        conn = get_db()
+
+        # Check device exists
+        device = conn.execute("SELECT device_id FROM devices WHERE device_id = ?", (device_id,)).fetchone()
+        if not device:
+            return jsonify({"error": "Device not found"}), 404
+
+        # Clear the anomaly
+        conn.execute("""
+            UPDATE devices
+            SET anomalous = 0, anomaly_reason = NULL, anomaly_detected_at = NULL
+            WHERE device_id = ?
+        """, (device_id,))
+        conn.commit()
+
+        print(f"[ANOMALY] Cleared flag for {device_id} (admin action)", flush=True)
+
+        return jsonify({
+            "status": "ok",
+            "device_id": device_id,
+            "message": "Anomaly flag cleared"
+        }), 200
+
+    except Exception as e:
+        print(f"[ERROR] clear_device_anomaly: {e}", flush=True)
+        return jsonify({"error": str(e)}), 500
+
 @app.route("/api/device/<device_id>/pin", methods=["PUT"])
 @require_admin
 def update_device_pin(device_id):
@@ -1414,7 +1634,8 @@ def list_devices():
     rows = conn.execute("""
         SELECT device_id, project_name, location_name, timezone, firmware_version,
                status, registered_at, last_seen_at, last_signal_dbm, last_battery_pct,
-               latitude, longitude, device_pin
+               latitude, longitude, device_pin,
+               anomalous, anomaly_reason, anomaly_detected_at
         FROM devices ORDER BY device_id
     """).fetchall()
 
@@ -1487,10 +1708,11 @@ if __name__ == "__main__":
     # Ensure OTA directories exist
     OTA_FIRMWARE_DIR.mkdir(parents=True, exist_ok=True)
     OTA_PATCHES_DIR.mkdir(parents=True, exist_ok=True)
-    print("DataJam NB-IoT Receiver v2.9 starting on port 5000...")
+    print("DataJam NB-IoT Receiver v2.11 starting on port 5000...")
     print("Features: Device auth, ISO timestamps, Apple/Android/Other classification, extended RSSI metrics,")
     print("          WiFi geolocation, heartbeat with uptime, device PIN, BLE counting, OTA updates,")
-    print("          Remote device configuration (RSSI/dwell thresholds, report intervals)")
+    print("          Remote device configuration, ANOMALY DETECTION (non-blocking)")
+    print(f"Anomaly threshold: {ANOMALY_BURST_THRESHOLD} requests in {ANOMALY_WINDOW_SECONDS}s")
     print(f"OTA Directory: {OTA_BASE_DIR}")
     print(f"Admin key: {ADMIN_KEY}")
     app.run(host="0.0.0.0", port=5000)

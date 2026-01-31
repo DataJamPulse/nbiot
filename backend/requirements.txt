@@ -1,0 +1,7 @@
+# DataJam NB-IoT Backend Dependencies
+# Install: pip install -r requirements.txt
+
+flask>=2.0.0
+flask-limiter>=3.0.0
+requests>=2.25.0
+timezonefinder>=6.0.0
