@@ -32,15 +32,15 @@ Use these agents for specific tasks:
 ### Active Devices
 | Device ID | Firmware | Location | Status |
 |-----------|----------|----------|--------|
-| JBNB0001 | v5.3 | Dev Unit 1 | Online |
-| JBNB0002 | v5.3 | Dev Unit 2 | Online |
-| JBNB0003 | v4.6 | Dev Unit 3 | Online |
-| JBNB0004 | v4.6 | Dev Unit 4 | Online |
-| JBNB4400 | v4.6 | Dev Unit 5 | Online |
+| JBNB0001 | **v5.5** | Dev Unit 1 | Online |
+| JBNB0002 | **v5.5** | Dev Unit 2 | Online |
+| JBNB0003 | **v5.5** | Dev Unit 3 | Online |
+| JBNB0004 | **v5.5** | Dev Unit 4 | Online |
+| JBNB4400 | **v5.5** | Dev Unit 5 | Online |
 
 ### Isolated Test Environment Architecture
 ```
-JBNB Device (firmware v5.4)
+JBNB Device (firmware v5.5)
     ↓ HTTP over NB-IoT cellular (T-Mobile)
 Hologram
     ↓
@@ -372,6 +372,18 @@ Time sync fix for correct timestamps.
 - No memory leaks from STL containers
 - No critical section issues with dynamic allocation
 - Predictable memory usage regardless of traffic
+
+### Firmware v5.5 (2026-01-31)
+**Consolidated release - restored v5.4 features + verified production-ready.**
+
+| Feature | Description |
+|---------|-------------|
+| **All v5.4 Features** | Fixed arrays, remote config, delta OTA, 2000 MAC capacity |
+| **Time Sync Fix** | Server timestamp parsing buffer increased (40 chars for microseconds) |
+| **Compile Fix** | Resolved `atSendCommandPrompt` → `atSendCommand` function reference |
+| **Fleet Consistency** | All 5 devices now running identical firmware |
+
+**Note:** This version consolidates all previous fixes after main.cpp was accidentally reverted during debugging. Restored from commit `86ba1c8` with minor fixes applied.
 
 ### Firmware v5.4 (2026-01-29)
 **Remote device configuration for distance zones and engagement buckets.**
@@ -1375,4 +1387,4 @@ Integrating NB-IoT device management into DataJam Reports Portal.
 
 ---
 
-*Last Updated: 2026-01-30 (Firmware v5.4, Backend v2.9, API v1.6.0, Two-Phase Provisioning Workflow)*
+*Last Updated: 2026-01-31 (Firmware v5.5, Backend v2.9, API v1.6.0 - All 5 devices on consolidated firmware)*
